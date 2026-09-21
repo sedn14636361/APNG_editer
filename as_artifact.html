@@ -1,0 +1,2693 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>APNG SCOPE</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,700;12..96,800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+JP:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0D0F13; --panel:#161920; --panel-2:#1E222B; --panel-3:#252A34; --line:#2A2F3A;
+  --fg:#E4E7ED; --muted:#838B9C; --accent:#6EE7B7; --accent-dim:#3E7A63;
+  --warn:#FFB86B; --danger:#FF6B6B; --r:3px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+/* 画面固定のアプリ配置。ページ自体はスクロールさせず、各領域が内側でスクロールする。
+   こうしないとタイムラインの最小幅がグリッド全体に伝播して画面全体が横長になる。 */
+body{background:var(--bg);color:var(--fg);
+  font-family:"IBM Plex Sans JP",-apple-system,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+  font-size:14px;line-height:1.55;-webkit-text-size-adjust:100%;
+  display:flex;flex-direction:column;overflow:hidden;min-width:0}
+.mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums}
+
+header{flex:0 0 auto;display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;
+  padding:10px 14px;border-bottom:1px solid var(--line);min-width:0}
+.wordmark{font-family:"Bricolage Grotesque",sans-serif;font-weight:800;font-size:16px;letter-spacing:-.02em;
+  line-height:1;display:flex;align-items:center;gap:7px;white-space:nowrap}
+.wordmark .dot{width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent)}
+.wordmark em{font-style:normal;color:var(--accent)}
+.tagline{color:var(--muted);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+
+/* ---- document toolbar (常時表示・1行・必要なら横スクロール) ---- */
+.docbar{flex:0 0 auto;display:flex;align-items:center;gap:6px;flex-wrap:nowrap;
+  padding:7px 12px;border-bottom:1px solid var(--line);background:var(--panel);
+  overflow-x:auto;overflow-y:hidden;min-width:0;scrollbar-width:thin}
+.shell:not(.loaded)~.docbar,#docbar.hidden{display:none}
+.docbar .lb{font-size:10px;color:var(--muted);white-space:nowrap;flex:0 0 auto}
+.docbar .x{font-size:11px;color:var(--muted);flex:0 0 auto}
+.docbar input[type=number]{width:66px;flex:0 0 auto}
+.docbar .btn{flex:0 0 auto}
+.docbar .hint{white-space:nowrap;flex:0 0 auto}
+
+/* ---- shell ---- */
+.shell{flex:1 1 auto;display:grid;grid-template-columns:minmax(0,1fr) minmax(330px,375px);
+  gap:10px;padding:10px;min-height:0;min-width:0;overflow:hidden}
+.shell:not(.loaded){grid-template-columns:minmax(0,1fr)}
+.shell:not(.loaded) .col-main,.shell:not(.loaded) .col-side{display:none}
+.shell.loaded #emptyState{display:none}
+.shell.drag{outline:2px dashed var(--accent);outline-offset:-6px}
+
+#emptyState{display:flex;align-items:center;justify-content:center;min-width:0}
+.drop{border:1.5px dashed var(--line);border-radius:6px;background:var(--panel);
+  padding:36px 28px;text-align:center;cursor:pointer;max-width:520px;width:100%}
+.drop:hover{border-color:var(--accent);background:var(--panel-2)}
+.drop h2{font-size:14px;font-weight:600;margin-bottom:5px}
+.drop p{color:var(--muted);font-size:12px}
+.drop input{display:none}
+
+.col-main{display:flex;flex-direction:column;min-height:0;min-width:0}
+.col-side{display:flex;flex-direction:column;gap:10px;min-height:0;min-width:0;
+  overflow-y:auto;overflow-x:hidden;scrollbar-width:thin}
+
+.panel{border:1px solid var(--line);border-radius:6px;background:var(--panel);min-width:0}
+.panel>.head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;
+  padding:8px 12px;border-bottom:1px solid var(--line);min-width:0}
+.panel>.head h3{font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.panel>.body{padding:12px}
+.col-main>.panel{flex:1 1 auto;display:flex;flex-direction:column;min-height:0}
+
+/* ---- stage ---- */
+.stage{flex:1 1 auto;position:relative;display:flex;align-items:center;justify-content:center;
+  min-height:120px;min-width:0;overflow:auto;padding:12px;
+  background-image:linear-gradient(45deg,#20242c 25%,transparent 25%),linear-gradient(-45deg,#20242c 25%,transparent 25%),
+    linear-gradient(45deg,transparent 75%,#20242c 75%),linear-gradient(-45deg,transparent 75%,#20242c 75%);
+  background-size:20px 20px;background-position:0 0,0 10px,10px -10px,-10px 0;background-color:#15171d}
+.stage canvas{display:block;max-width:100%;max-height:100%;box-shadow:0 0 0 1px rgba(255,255,255,.07)}
+
+.transport{flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:8px 10px;
+  border-top:1px solid var(--line);flex-wrap:wrap;min-width:0}
+.tbtn{font:inherit;background:var(--panel-2);border:1px solid var(--line);color:var(--fg);border-radius:var(--r);
+  width:31px;height:31px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex:0 0 auto;font-size:11px}
+.tbtn:hover{border-color:var(--accent)}
+.tbtn:disabled{opacity:.35;cursor:default;pointer-events:none}
+.tbtn.play{width:40px;background:var(--accent);border-color:var(--accent);color:#0D0F13}
+.tbtn.toggle{font-size:15px;line-height:1}
+.tbtn.toggle[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
+.tbtn.toggle[aria-pressed="false"]{color:var(--muted)}
+.scrub-wrap{flex:1 1 150px;display:flex;flex-direction:column;gap:2px;min-width:110px}
+.scrub-lab{display:flex;justify-content:space-between;gap:8px;font-size:10.5px;color:var(--muted)}
+.scrub-lab b{color:var(--accent);font-weight:500}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:15px;background:transparent;cursor:pointer}
+input[type=range]::-webkit-slider-runnable-track{height:2px;background:var(--line)}
+input[type=range]::-moz-range-track{height:2px;background:var(--line)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:11px;background:var(--accent);border-radius:1px;margin-top:-4.5px}
+input[type=range]::-moz-range-thumb{width:11px;height:11px;background:var(--accent);border:0;border-radius:1px}
+.speed{display:flex;gap:3px;flex:0 0 auto}
+.speed button{font:inherit;font-family:"IBM Plex Mono",monospace;font-size:10.5px;background:var(--panel-2);
+  border:1px solid var(--line);color:var(--muted);border-radius:var(--r);padding:5px 6px;cursor:pointer}
+.speed button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#0D0F13;font-weight:600}
+.speed button:hover{border-color:var(--accent)}
+.speed button:disabled{opacity:.35;pointer-events:none}
+
+/* ---- controls ---- */
+.btn{font:inherit;font-size:11.5px;color:var(--fg);background:var(--panel-2);border:1px solid var(--line);
+  border-radius:var(--r);padding:6px 10px;cursor:pointer;white-space:nowrap}
+.btn:hover{border-color:var(--accent)}
+.btn:disabled{opacity:.35;cursor:default;pointer-events:none}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#0D0F13;font-weight:600}
+.btn.danger{color:#FFC9C9}
+.btn.danger:hover{border-color:var(--danger)}
+.btn.sm{padding:4px 8px;font-size:11px}
+.chip{font:inherit;font-size:11px;color:var(--muted);background:var(--panel-2);border:1px solid var(--line);
+  border-radius:var(--r);padding:4px 9px;cursor:pointer;white-space:nowrap}
+.chip:hover{border-color:var(--accent)}
+.chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#0D0F13;font-weight:600}
+.row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;min-width:0}
+label.fld{display:flex;flex-direction:column;gap:2px;font-size:10px;color:var(--muted)}
+label.chk{display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--fg);cursor:pointer;white-space:nowrap}
+label.chk input{accent-color:var(--accent);width:13px;height:13px;cursor:pointer;margin:0}
+input[type=number],select{font:inherit;font-family:"IBM Plex Mono",monospace;font-size:11.5px;
+  background:var(--panel-2);border:1px solid var(--line);color:var(--fg);border-radius:var(--r);padding:5px 7px}
+input[type=number]{width:70px}
+select{width:100%;cursor:pointer}
+input[type=number]:focus,select:focus{border-color:var(--accent);outline:none}
+.hint{color:var(--muted);font-size:10.5px;line-height:1.65;font-family:"IBM Plex Mono",monospace}
+.fps{display:inline-flex;align-items:baseline;gap:4px;flex:0 0 auto;white-space:nowrap;
+  border:1px solid var(--line);border-radius:var(--r);padding:2px 8px;background:var(--panel-2)}
+.fps b{font-family:"IBM Plex Mono",monospace;font-size:13px;font-weight:600;color:var(--accent);
+  font-variant-numeric:tabular-nums}
+.fps span{font-size:9.5px;color:var(--muted)}
+.fps.uneven b{color:var(--warn)}
+.sep{width:1px;align-self:stretch;background:var(--line);flex:0 0 auto}
+
+/* ---- layers ---- */
+.layer-list{display:flex;flex-direction:column-reverse;gap:5px;margin-bottom:10px}
+.layer{display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--line);
+  border-radius:var(--r);background:var(--panel-2);cursor:pointer;min-width:0}
+.layer:hover{border-color:var(--muted)}
+.layer.active{border-color:var(--accent);background:var(--panel-3)}
+.layer .eye{font-size:12px;width:17px;text-align:center;flex:0 0 auto;opacity:.35;background:none;border:0;color:var(--fg);cursor:pointer;padding:0}
+.layer.vis .eye{opacity:1;color:var(--accent)}
+.layer .thumb{width:30px;height:30px;flex:0 0 auto;border:1px solid var(--line);border-radius:2px;background-color:#15171d}
+.layer .meta{flex:1 1 auto;min-width:0}
+.layer .nm{font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.layer .sub{font-size:10px;color:var(--muted);font-family:"IBM Plex Mono",monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.layer .ord{display:flex;flex-direction:column;gap:2px;flex:0 0 auto}
+.layer .ord button{font:inherit;font-size:8px;line-height:1;background:var(--panel-3);border:1px solid var(--line);
+  color:var(--muted);border-radius:2px;padding:2px 4px;cursor:pointer}
+.layer .ord button:hover{border-color:var(--accent);color:var(--accent)}
+.layer .ord button:disabled{opacity:.3;pointer-events:none}
+.layer-edit{border-top:1px solid var(--line);padding-top:10px;display:grid;gap:9px;min-width:0}
+.layer-edit .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px}
+.slider-row{display:grid;gap:2px}
+.slider-row .lab{display:flex;justify-content:space-between;font-size:10.5px;color:var(--muted)}
+.slider-row .lab b{color:var(--accent);font-weight:500;font-family:"IBM Plex Mono",monospace}
+.scope{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:7px 8px;border-radius:var(--r);
+  background:var(--panel-2);border:1px solid var(--line)}
+.scope.on{border-color:var(--warn)}
+.scope .lb{font-size:10px;color:var(--muted)}
+.scope .note{font-size:10px;color:var(--warn);font-family:"IBM Plex Mono",monospace}
+.empty-note{color:var(--muted);font-size:11.5px;text-align:center;padding:10px 0}
+
+/* ---- stats ---- */
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(88px,1fr));gap:8px 10px}
+.stat{display:flex;flex-direction:column;gap:0}
+.stat label{font-size:10px;color:var(--muted)}
+.stat span{font-family:"IBM Plex Mono",monospace;font-size:12px;font-variant-numeric:tabular-nums}
+.stat span.accent{color:var(--accent)}
+
+/* ---- timeline (画面下に固定。横スクロールはこの帯の中だけで完結させる) ---- */
+.tlwrap{flex:0 0 auto;min-width:0;overflow:hidden;border-top:1px solid var(--line);background:var(--panel);
+  padding:8px 10px 9px;display:flex;flex-direction:column;gap:7px}
+.shell:not(.loaded)+.tlwrap{display:none}
+.tl-head{display:flex;justify-content:space-between;align-items:center;gap:10px;min-width:0}
+.tl-head h3{font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.selcount{font-size:10.5px;color:var(--muted);font-family:"IBM Plex Mono",monospace;white-space:nowrap}
+.selcount b{color:var(--accent);font-weight:500}
+/* 横スクロールは外側の1枚だけが持ち、名前の列は sticky で左に貼りつける。
+   行ごとに別々のスクロールにすると必ずずれるので、行は同じ器の中に積む。 */
+.tl-scroll{overflow-x:auto;overflow-y:auto;min-width:0;max-height:34vh;padding-bottom:5px;scrollbar-width:thin}
+.tk{display:flex;align-items:stretch;gap:4px;width:max-content;margin-bottom:4px}
+.tk:last-child{margin-bottom:0}
+.tk-name{position:sticky;left:0;z-index:2;flex:0 0 96px;width:96px;
+  display:flex;flex-direction:column;justify-content:center;gap:1px;
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
+  padding:3px 6px;cursor:pointer;text-align:left;font:inherit;color:var(--fg)}
+.tk-name .n{font-size:10px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tk-name .s{font-size:9px;color:var(--muted);font-family:"IBM Plex Mono",monospace}
+.tk-name.active{border-color:var(--accent);background:var(--panel-3)}
+.tk-name.head{cursor:default}
+.tk-name.hidden .n{text-decoration:line-through;color:var(--muted)}
+.tk-cells{display:flex;gap:4px;flex:0 0 auto}
+/* レイヤー行のコマ。合成結果の行より低くして、行数が増えても見渡せるようにする */
+.lchip{flex:0 0 auto;width:54px;border:1px solid var(--line);border-radius:var(--r);
+  background:var(--panel-2);cursor:pointer;overflow:hidden;position:relative;padding:0;display:block}
+.lchip canvas{display:block;width:100%;height:26px;background-color:#15171d}
+.lchip.sel{border-color:var(--accent)}
+.lchip.cur::after{content:"";position:absolute;inset:0;border:2px solid var(--warn);border-radius:var(--r);pointer-events:none}
+/* 表示区間の外。消えていることが一目で分かるように斜線を敷く */
+.lchip.out{opacity:.32}
+.lchip.out::before{content:"";position:absolute;inset:0;z-index:1;
+  background:repeating-linear-gradient(45deg,transparent 0 3px,rgba(255,255,255,.07) 3px 6px)}
+.lchip .a{position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--accent);z-index:2}
+.fchip{flex:0 0 auto;width:54px;border:1px solid var(--line);border-radius:var(--r);background:var(--panel-2);
+  cursor:pointer;overflow:hidden;position:relative;padding:0;font:inherit;color:var(--fg);display:block}
+.fchip canvas{display:block;width:100%;height:40px;background-color:#15171d}
+.fchip .lbl{display:flex;justify-content:space-between;font-size:9px;padding:1px 3px;
+  font-family:"IBM Plex Mono",monospace;color:var(--muted)}
+.fchip.sel{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.fchip.sel .lbl{background:var(--accent);color:#0D0F13;font-weight:600}
+.fchip.cur::after{content:"";position:absolute;inset:0;border:2px solid var(--warn);border-radius:var(--r);pointer-events:none}
+.fchip.ov::before{content:"";position:absolute;top:3px;right:3px;width:6px;height:6px;border-radius:50%;
+  background:var(--warn);box-shadow:0 0 0 1.5px rgba(13,15,19,.85);z-index:1}
+.tl-bar{display:flex;gap:5px;align-items:center;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;
+  min-width:0;padding-bottom:2px;scrollbar-width:thin}
+.tl-bar label.fld{flex-direction:row;align-items:center;gap:4px;flex:0 0 auto;white-space:nowrap}
+
+@media(max-width:900px){
+  html,body{height:auto}
+  body{display:block;overflow:auto}
+  .shell{display:block;overflow:visible;height:auto}
+  .shell:not(.loaded) .col-main,.shell:not(.loaded) .col-side{display:none}
+  .col-main,.col-side{overflow:visible;margin-bottom:10px}
+  .col-main>.panel{display:block}
+  .stage{max-height:46vh}
+  .tlwrap{padding-bottom:24px}
+}
+
+#toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%) translateY(8px);
+  background:var(--fg);color:#0D0F13;font-size:12px;font-weight:600;padding:7px 15px;border-radius:var(--r);
+  opacity:0;pointer-events:none;transition:opacity .18s,transform .18s;z-index:40}
+#toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+.err-box{border:1px solid var(--danger);background:#2A1518;border-radius:var(--r);padding:9px 11px;
+  font-size:11.5px;color:#FFC9C9;display:none;white-space:pre-wrap}
+.err-box.on{display:block}
+#ov{position:fixed;inset:0;background:rgba(6,7,10,.9);z-index:60;display:none;
+  align-items:center;justify-content:center;padding:20px}
+#ov.on{display:flex}
+.ovcard{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
+  padding:16px;max-width:min(680px,92vw);max-height:88vh;overflow:auto}
+.ovcard h3{font-size:13px;font-weight:600;margin-bottom:4px}
+.ovcard p{font-size:11.5px;color:var(--muted);margin-bottom:12px;line-height:1.7}
+.ovcard img{display:block;width:100%;height:auto;max-height:52vh;object-fit:contain;
+  background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r);margin-bottom:12px}
+.ovcard .row{display:flex;gap:8px;justify-content:flex-end}
+.fadebox{border:1px solid var(--line);border-radius:var(--r);padding:8px 9px;margin:2px 0;
+  background:var(--panel-2);display:flex;flex-direction:column;gap:7px}
+.fadebox.on{border-color:var(--accent-dim)}
+.fadebox .lb{font-size:10px;color:var(--muted);font-weight:600}
+.fadebox .sec{font-size:9.5px;color:var(--muted);margin-left:5px;white-space:nowrap}
+.fadebox .note{font-size:10px;color:var(--muted);line-height:1.6}
+.fdgrid{display:grid;grid-template-columns:1fr 1fr;gap:6px 8px}
+.fdgrid .fld{min-width:0}
+.curve{display:block;width:100%;height:118px;border:1px solid var(--line);border-radius:var(--r);
+  background:var(--bg);cursor:crosshair;touch-action:none}
+.curve:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+<div id="ov" role="dialog" aria-modal="true" aria-labelledby="ovTitle">
+  <div class="ovcard">
+    <h3 id="ovTitle"></h3>
+    <p id="ovNote"></p>
+    <img id="ovImg" alt="書き出した画像" style="display:none">
+    <div class="row">
+      <a class="btn sm" id="ovDl" download style="display:none">保存する</a>
+      <button class="btn sm" id="ovClose" type="button">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<header>
+  <div class="wordmark"><span class="dot"></span>APNG<em>·</em>SCOPE</div>
+  <div class="tagline">アニメーションPNGを重ねて、コマ単位で編集して、書き出す</div>
+</header>
+
+<!-- ドキュメント設定はサイド列に置くとノートPCで隠れるので、常に見える1行のツールバーにする -->
+<div class="docbar" id="docbar">
+  <span class="lb">キャンバス</span>
+  <input type="number" id="docW" min="1" max="4096" step="1" title="キャンバス幅(px)">
+  <span class="x">×</span>
+  <input type="number" id="docH" min="1" max="4096" step="1" title="キャンバス高さ(px)">
+  <button class="btn sm" id="btnFitCanvas">全レイヤーに合わせる</button>
+  <span class="sep"></span>
+  <span class="lb">全体の長さ</span>
+  <input type="number" id="docDur" min="0.05" max="600" step="0.05" title="秒">
+  <span class="x">秒</span>
+  <button class="btn sm" id="btnApplyDur">合わせる</button>
+  <button class="btn sm" id="btnEvenDur">均等割り</button>
+  <span class="sep"></span>
+  <span class="lb">ループ</span>
+  <input type="number" id="docLoop" min="0" max="9999" step="1" title="書き出すAPNGのループ回数（0＝無限）">
+  <span class="sep"></span>
+  <label class="chk" title="超える場合は減色と解像度の縮小で5MB以下に収めます"><input type="checkbox" id="optFit5" checked>5MB以下</label>
+  <button class="btn primary" id="btnExportApng">APNGで書き出す</button>
+  <button class="btn" id="btnExportPng">このコマをPNG</button>
+  <span class="sep"></span>
+  <span class="fps" id="fpsBox" title="1秒あたりのコマ数。コマごとの表示時間がばらついているときは平均です">
+    <b id="fpsVal">—</b><span>コマ/秒</span></span>
+  <span class="hint" id="exportNote"></span>
+</div>
+
+<div class="shell" id="shell">
+
+  <div id="emptyState">
+    <div class="drop" id="drop">
+      <h2>PNG / APNG / 画像ファイルをドラッグ&amp;ドロップ</h2>
+      <p>またはクリックして選択（複数選ぶとそのままレイヤーとして重なります）</p>
+    </div>
+  </div>
+
+  <div class="col-main">
+    <div class="panel">
+      <div class="stage" id="stage"><canvas id="cv"></canvas></div>
+      <div class="transport">
+        <button class="tbtn" id="btnPrev" title="前のコマ" aria-label="前のコマ">◀</button>
+        <button class="tbtn play" id="btnPlay" title="再生・一時停止" aria-label="再生・一時停止">▶</button>
+        <button class="tbtn" id="btnNext" title="次のコマ" aria-label="次のコマ">▶</button>
+        <button class="tbtn toggle" id="btnRepeat" aria-pressed="true" title="リピート再生：オン" aria-label="リピート再生の切り替え">↻</button>
+        <div class="scrub-wrap">
+          <div class="scrub-lab"><span class="mono">FRAME <b id="frameNow">0</b>/<span id="frameTotal">0</span></span><span class="mono"><span id="timeNow">0.00s</span> / 全体 <b id="timeTotal">0.00s</b></span></div>
+          <input type="range" id="scrub" min="0" max="0" step="1" value="0">
+        </div>
+        <div class="speed" id="speed">
+          <button data-v="0.25">.25×</button>
+          <button data-v="0.5">.5×</button>
+          <button data-v="1" aria-pressed="true">1×</button>
+          <button data-v="2">2×</button>
+          <button data-v="4">4×</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-side">
+    <div class="err-box" id="errBox"></div>
+    <div class="panel">
+      <div class="head">
+        <h3>レイヤー</h3>
+        <div class="row">
+          <button class="btn sm" id="btnAddLayer">画像を追加</button>
+          <button class="btn sm danger" id="btnDelLayer">削除</button>
+        </div>
+      </div>
+      <div class="body">
+        <div class="layer-list" id="layerList"></div>
+        <div class="layer-edit" id="layerEdit"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="tlwrap" id="tlwrap">
+  <div class="tl-head">
+    <h3>タイムライン</h3>
+    <span class="selcount" id="tlFps"></span>
+    <span class="selcount" id="selCount"></span>
+  </div>
+  <div class="tl-scroll" id="tlScroll"></div>
+  <div class="tl-bar">
+    <button class="btn sm" id="btnSelAll">すべて選択</button>
+    <button class="btn sm" id="btnSelNone">選択解除</button>
+    <span class="sep"></span>
+    <label class="fld">表示時間<input type="number" id="bulkDelay" min="10" max="60000" step="10" value="100">ms</label>
+    <button class="btn sm" id="btnApplyDelay">適用</button>
+    <label class="fld">速度<input type="number" id="bulkSpeed" min="0.1" max="10" step="0.05" value="1">×</label>
+    <button class="btn sm" id="btnApplySpeed">適用</button>
+    <span class="sep"></span>
+    <button class="btn sm" id="btnDupFrames">複製</button>
+    <button class="btn sm" id="btnMoveL">◀ 移動</button>
+    <button class="btn sm" id="btnMoveR">移動 ▶</button>
+    <button class="btn sm" id="btnReverse">逆順</button>
+    <button class="btn sm danger" id="btnDelFrames">削除</button>
+    <span class="sep"></span>
+    <span class="hint">クリック＝選択 / Shift＝範囲 / Ctrl(⌘)＝個別</span>
+  </div>
+</div>
+
+<!-- 空状態のドロップ枠が非表示になっても選択ダイアログを開けるよう、入力は外に置く -->
+<input type="file" id="fileInput" accept=".png,.apng,.jpg,.jpeg,.webp,image/*" multiple style="display:none">
+
+<div id="toast"></div>
+
+<script>
+/* pako 3.0.1 (MIT/Zlib) — https://github.com/nodeca/pako */
+(function(e,t){typeof exports==`object`&&typeof module<`u`?t(exports):typeof define==`function`&&define.amd?define([`exports`],t):(e=typeof globalThis<`u`?globalThis:e||self,t(e.pako={}))})(this,function(e){Object.defineProperty(e,Symbol.toStringTag,{value:`Module`});var t=4,n=0,r=1,i=2;function a(e){let t=e.length;for(;--t>=0;)e[t]=0}var o=0,s=1,c=2,l=29,u=256,d=286,f=30,p=19,m=573,h=15,g=16,_=7,v=256,y=16,b=17,x=18,S=new Uint8Array([0,0,0,0,0,0,0,0,1,1,1,1,2,2,2,2,3,3,3,3,4,4,4,4,5,5,5,5,0]),C=new Uint8Array([0,0,0,0,1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9,10,10,11,11,12,12,13,13]),w=new Uint8Array([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,3,7]),T=new Uint8Array([16,17,18,0,8,7,9,6,10,5,11,4,12,3,13,2,14,1,15]),E=512,D=Array(288*2);a(D);var O=Array(f*2);a(O);var k=Array(E);a(k);var A=Array(256);a(A);var j=Array(l);a(j);var ee=Array(f);a(ee);var te=class{constructor(e,t,n,r,i){this.static_tree=e,this.extra_bits=t,this.extra_base=n,this.elems=r,this.max_length=i,this.has_stree=e&&e.length}},ne,re,ie,ae=class{constructor(e,t){this.dyn_tree=e,this.max_code=0,this.stat_desc=t}},oe=e=>e<256?k[e]:k[256+(e>>>7)],se=(e,t)=>{e.pending_buf[e.pending++]=t&255,e.pending_buf[e.pending++]=t>>>8&255},M=(e,t,n)=>{e.bi_valid>g-n?(e.bi_buf|=t<<e.bi_valid&65535,se(e,e.bi_buf),e.bi_buf=t>>g-e.bi_valid,e.bi_valid+=n-g):(e.bi_buf|=t<<e.bi_valid&65535,e.bi_valid+=n)},N=(e,t,n)=>{M(e,n[t*2],n[t*2+1])},ce=(e,t)=>{let n=0;do n|=e&1,e>>>=1,n<<=1;while(--t>0);return n>>>1},le=e=>{e.bi_valid===16?(se(e,e.bi_buf),e.bi_buf=0,e.bi_valid=0):e.bi_valid>=8&&(e.pending_buf[e.pending++]=e.bi_buf&255,e.bi_buf>>=8,e.bi_valid-=8)},ue=(e,t)=>{let n=t.dyn_tree,r=t.max_code,i=t.stat_desc.static_tree,a=t.stat_desc.has_stree,o=t.stat_desc.extra_bits,s=t.stat_desc.extra_base,c=t.stat_desc.max_length,l,u,d,f,p,g,_=0;for(f=0;f<=h;f++)e.bl_count[f]=0;for(n[e.heap[e.heap_max]*2+1]=0,l=e.heap_max+1;l<m;l++)u=e.heap[l],f=n[n[u*2+1]*2+1]+1,f>c&&(f=c,_++),n[u*2+1]=f,!(u>r)&&(e.bl_count[f]++,p=0,u>=s&&(p=o[u-s]),g=n[u*2],e.opt_len+=g*(f+p),a&&(e.static_len+=g*(i[u*2+1]+p)));if(_!==0){do{for(f=c-1;e.bl_count[f]===0;)f--;e.bl_count[f]--,e.bl_count[f+1]+=2,e.bl_count[c]--,_-=2}while(_>0);for(f=c;f!==0;f--)for(u=e.bl_count[f];u!==0;)d=e.heap[--l],!(d>r)&&(n[d*2+1]!==f&&(e.opt_len+=(f-n[d*2+1])*n[d*2],n[d*2+1]=f),u--)}},de=(e,t,n)=>{let r=Array(16),i=0,a,o;for(a=1;a<=h;a++)i=i+n[a-1]<<1,r[a]=i;for(o=0;o<=t;o++){let t=e[o*2+1];t!==0&&(e[o*2]=ce(r[t]++,t))}},fe=()=>{let e,t,n,r,i,a=Array(16);for(n=0,r=0;r<l-1;r++)for(j[r]=n,e=0;e<1<<S[r];e++)A[n++]=r;for(A[n-1]=r,i=0,r=0;r<16;r++)for(ee[r]=i,e=0;e<1<<C[r];e++)k[i++]=r;for(i>>=7;r<f;r++)for(ee[r]=i<<7,e=0;e<1<<C[r]-7;e++)k[256+i++]=r;for(t=0;t<=h;t++)a[t]=0;for(e=0;e<=143;)D[e*2+1]=8,e++,a[8]++;for(;e<=255;)D[e*2+1]=9,e++,a[9]++;for(;e<=279;)D[e*2+1]=7,e++,a[7]++;for(;e<=287;)D[e*2+1]=8,e++,a[8]++;for(de(D,287,a),e=0;e<f;e++)O[e*2+1]=5,O[e*2]=ce(e,5);ne=new te(D,S,257,d,h),re=new te(O,C,0,f,h),ie=new te([],w,0,p,_)},pe=e=>{let t;for(t=0;t<d;t++)e.dyn_ltree[t*2]=0;for(t=0;t<f;t++)e.dyn_dtree[t*2]=0;for(t=0;t<p;t++)e.bl_tree[t*2]=0;e.dyn_ltree[v*2]=1,e.opt_len=e.static_len=0,e.sym_next=e.matches=0},me=e=>{e.bi_valid>8?se(e,e.bi_buf):e.bi_valid>0&&(e.pending_buf[e.pending++]=e.bi_buf),e.bi_buf=0,e.bi_valid=0},he=(e,t,n,r)=>{let i=t*2,a=n*2;return e[i]<e[a]||e[i]===e[a]&&r[t]<=r[n]},ge=(e,t,n)=>{let r=e.heap[n],i=n<<1;for(;i<=e.heap_len&&(i<e.heap_len&&he(t,e.heap[i+1],e.heap[i],e.depth)&&i++,!he(t,r,e.heap[i],e.depth));)e.heap[n]=e.heap[i],n=i,i<<=1;e.heap[n]=r},_e=(e,t,n)=>{let r,i,a=0,o,s;if(e.sym_next!==0)do r=e.pending_buf[e.sym_buf+a++]&255,r+=(e.pending_buf[e.sym_buf+a++]&255)<<8,i=e.pending_buf[e.sym_buf+a++],r===0?N(e,i,t):(o=A[i],N(e,o+u+1,t),s=S[o],s!==0&&(i-=j[o],M(e,i,s)),r--,o=oe(r),N(e,o,n),s=C[o],s!==0&&(r-=ee[o],M(e,r,s)));while(a<e.sym_next);N(e,v,t)},ve=(e,t)=>{let n=t.dyn_tree,r=t.stat_desc.static_tree,i=t.stat_desc.has_stree,a=t.stat_desc.elems,o,s,c=-1,l;for(e.heap_len=0,e.heap_max=m,o=0;o<a;o++)n[o*2]===0?n[o*2+1]=0:(e.heap[++e.heap_len]=c=o,e.depth[o]=0);for(;e.heap_len<2;)l=e.heap[++e.heap_len]=c<2?++c:0,n[l*2]=1,e.depth[l]=0,e.opt_len--,i&&(e.static_len-=r[l*2+1]);for(t.max_code=c,o=e.heap_len>>1;o>=1;o--)ge(e,n,o);l=a;do o=e.heap[1],e.heap[1]=e.heap[e.heap_len--],ge(e,n,1),s=e.heap[1],e.heap[--e.heap_max]=o,e.heap[--e.heap_max]=s,n[l*2]=n[o*2]+n[s*2],e.depth[l]=(e.depth[o]>=e.depth[s]?e.depth[o]:e.depth[s])+1,n[o*2+1]=n[s*2+1]=l,e.heap[1]=l++,ge(e,n,1);while(e.heap_len>=2);e.heap[--e.heap_max]=e.heap[1],ue(e,t),de(n,c,e.bl_count)},ye=(e,t,n)=>{let r,i=-1,a,o=t[1],s=0,c=7,l=4;for(o===0&&(c=138,l=3),t[(n+1)*2+1]=65535,r=0;r<=n;r++)a=o,o=t[(r+1)*2+1],!(++s<c&&a===o)&&(s<l?e.bl_tree[a*2]+=s:a===0?s<=10?e.bl_tree[b*2]++:e.bl_tree[x*2]++:(a!==i&&e.bl_tree[a*2]++,e.bl_tree[y*2]++),s=0,i=a,o===0?(c=138,l=3):a===o?(c=6,l=3):(c=7,l=4))},be=(e,t,n)=>{let r,i=-1,a,o=t[1],s=0,c=7,l=4;for(o===0&&(c=138,l=3),r=0;r<=n;r++)if(a=o,o=t[(r+1)*2+1],!(++s<c&&a===o)){if(s<l)do N(e,a,e.bl_tree);while(--s!==0);else a===0?s<=10?(N(e,b,e.bl_tree),M(e,s-3,3)):(N(e,x,e.bl_tree),M(e,s-11,7)):(a!==i&&(N(e,a,e.bl_tree),s--),N(e,y,e.bl_tree),M(e,s-3,2));s=0,i=a,o===0?(c=138,l=3):a===o?(c=6,l=3):(c=7,l=4)}},xe=e=>{let t;for(ye(e,e.dyn_ltree,e.l_desc.max_code),ye(e,e.dyn_dtree,e.d_desc.max_code),ve(e,e.bl_desc),t=p-1;t>=3&&e.bl_tree[T[t]*2+1]===0;t--);return e.opt_len+=3*(t+1)+5+5+4,t},Se=(e,t,n,r)=>{let i;for(M(e,t-257,5),M(e,n-1,5),M(e,r-4,4),i=0;i<r;i++)M(e,e.bl_tree[T[i]*2+1],3);be(e,e.dyn_ltree,t-1),be(e,e.dyn_dtree,n-1)},Ce=e=>{let t=4093624447,i;for(i=0;i<=31;i++,t>>>=1)if(t&1&&e.dyn_ltree[i*2]!==0)return n;if(e.dyn_ltree[18]!==0||e.dyn_ltree[20]!==0||e.dyn_ltree[26]!==0)return r;for(i=32;i<u;i++)if(e.dyn_ltree[i*2]!==0)return r;return n},we=!1,Te=e=>{we||(fe(),we=!0),e.l_desc=new ae(e.dyn_ltree,ne),e.d_desc=new ae(e.dyn_dtree,re),e.bl_desc=new ae(e.bl_tree,ie),e.bi_buf=0,e.bi_valid=0,pe(e)},Ee=(e,t,n,r)=>{M(e,(o<<1)+ +!!r,3),me(e),se(e,n),se(e,~n),n&&e.pending_buf.set(e.window.subarray(t,t+n),e.pending),e.pending+=n},De=e=>{M(e,s<<1,3),N(e,v,D),le(e)},Oe=(e,n,r,a)=>{let o,l,u=0;e.level>0?(e.strm.data_type===i&&(e.strm.data_type=Ce(e)),ve(e,e.l_desc),ve(e,e.d_desc),u=xe(e),o=e.opt_len+3+7>>>3,l=e.static_len+3+7>>>3,l<=o&&(o=l)):o=l=r+5,r+4<=o&&n!==-1?Ee(e,n,r,a):e.strategy===t||l===o?(M(e,(s<<1)+ +!!a,3),_e(e,D,O)):(M(e,(c<<1)+ +!!a,3),Se(e,e.l_desc.max_code+1,e.d_desc.max_code+1,u+1),_e(e,e.dyn_ltree,e.dyn_dtree)),pe(e),a&&me(e)},P=(e,t,n)=>(e.pending_buf[e.sym_buf+e.sym_next++]=t,e.pending_buf[e.sym_buf+e.sym_next++]=t>>8,e.pending_buf[e.sym_buf+e.sym_next++]=n,t===0?e.dyn_ltree[n*2]++:(e.matches++,t--,e.dyn_ltree[(A[n]+u+1)*2]++,e.dyn_dtree[oe(t)*2]++),e.sym_next===e.sym_end),ke=(e,t,n,r)=>{let i=e&65535|0,a=e>>>16&65535|0,o=0;for(;n!==0;){o=n>2e3?2e3:n,n-=o;do i=i+t[r++]|0,a=a+i|0;while(--o);i%=65521,a%=65521}return i|a<<16|0},Ae=new Uint32Array((()=>{let e,t=[];for(var n=0;n<256;n++){e=n;for(var r=0;r<8;r++)e=e&1?3988292384^e>>>1:e>>>1;t[n]=e}return t})()),F=(e,t,n,r)=>{let i=Ae,a=r+n;e^=-1;for(let n=r;n<a;n++)e=e>>>8^i[(e^t[n])&255];return e^-1},I={2:`need dictionary`,1:`stream end`,0:``,"-1":`file error`,"-2":`stream error`,"-3":`data error`,"-4":`insufficient memory`,"-5":`buffer error`,"-6":`incompatible version`},je=0,Me=1,Ne=2,Pe=3,Fe=4,Ie=5,Le=6,Re=0,ze=1,Be=2,Ve=-1,He=-2,Ue=-3,We=-4,Ge=-5,Ke=9,qe=15,Je=8,Ye=573,L=3,R=258,z=262,Xe=32,Ze=42,Qe=57,$e=69,et=73,tt=91,nt=103,B=113,rt=666,V=1,it=2,H=3,at=4,ot=3,U=(e,t)=>(e.msg=I[t],t),st=e=>e*2-(e>4?9:0),W=e=>{let t=e.length;for(;--t>=0;)e[t]=0},ct=e=>{let t,n,r,i=e.w_size;t=e.hash_size,r=t;do n=e.head[--r],e.head[r]=n>=i?n-i:0;while(--t);t=i,r=t;do n=e.prev[--r],e.prev[r]=n>=i?n-i:0;while(--t)},lt=(e,t,n)=>(t<<e.hash_shift^n)&e.hash_mask,G=(e,t)=>{let n;if(e.legacy_hash)n=e.ins_h=lt(e,e.ins_h,e.window[t+L-1]);else{let r=e.window,i=r[t]|r[t+1]<<8|r[t+2]<<16|r[t+3]<<24;n=e.ins_h=Math.imul(i,66521)+66521>>>16&e.hash_mask}let r=e.prev[t&e.w_mask]=e.head[n];return e.head[n]=t,r},K=e=>{let t=e.state,n=t.pending;n>e.avail_out&&(n=e.avail_out),n!==0&&(e.output.set(t.pending_buf.subarray(t.pending_out,t.pending_out+n),e.next_out),e.next_out+=n,t.pending_out+=n,e.total_out+=n,e.avail_out-=n,t.pending-=n,t.pending===0&&(t.pending_out=0))},q=(e,t)=>{Oe(e,e.block_start>=0?e.block_start:-1,e.strstart-e.block_start,t),e.block_start=e.strstart,K(e.strm)},J=(e,t)=>{e.pending_buf[e.pending++]=t},ut=(e,t)=>{e.pending_buf[e.pending++]=t>>>8&255,e.pending_buf[e.pending++]=t&255},dt=(e,t,n,r)=>{let i=e.avail_in;return i>r&&(i=r),i===0?0:(e.avail_in-=i,t.set(e.input.subarray(e.next_in,e.next_in+i),n),e.state.wrap===1?e.adler=ke(e.adler,t,i,n):e.state.wrap===2&&(e.adler=F(e.adler,t,i,n)),e.next_in+=i,e.total_in+=i,i)},ft=(e,t)=>{let n=e.max_chain_length,r=e.strstart,i,a,o=e.prev_length,s=e.nice_match,c=e.strstart>e.w_size-z?e.strstart-(e.w_size-z):0,l=e.window,u=e.w_mask,d=e.prev,f=e.strstart+R,p=l[r+o-1],m=l[r+o];e.prev_length>=e.good_match&&(n>>=2),s>e.lookahead&&(s=e.lookahead);do{if(i=t,l[i+o]!==m||l[i+o-1]!==p||l[i]!==l[r]||l[++i]!==l[r+1])continue;r+=2,i++;do;while(l[++r]===l[++i]&&l[++r]===l[++i]&&l[++r]===l[++i]&&l[++r]===l[++i]&&l[++r]===l[++i]&&l[++r]===l[++i]&&l[++r]===l[++i]&&l[++r]===l[++i]&&r<f);if(a=R-(f-r),r=f-R,a>o){if(e.match_start=t,o=a,a>=s)break;p=l[r+o-1],m=l[r+o]}}while((t=d[t&u])>c&&--n!==0);return o<=e.lookahead?o:e.lookahead},pt=e=>{let t=e.w_size,n,r,i;do{if(r=e.window_size-e.lookahead-e.strstart,e.strstart>=t+(t-z)&&(e.window.set(e.window.subarray(t,t+t-r),0),e.match_start-=t,e.strstart-=t,e.block_start-=t,e.insert>e.strstart&&(e.insert=e.strstart),ct(e),r+=t),e.strm.avail_in===0)break;if(n=dt(e.strm,e.window,e.strstart+e.lookahead,r),e.lookahead+=n,!e.legacy_hash){if(e.lookahead+e.insert>L)for(i=e.strstart-e.insert;e.insert&&(G(e,i),i++,e.insert--,!(e.lookahead+e.insert<=L)););}else if(e.lookahead+e.insert>=L)for(i=e.strstart-e.insert,e.ins_h=e.window[i],e.ins_h=lt(e,e.ins_h,e.window[i+1]);e.insert&&(G(e,i),i++,e.insert--,!(e.lookahead+e.insert<L)););}while(e.lookahead<z&&e.strm.avail_in!==0)},mt=(e,t)=>{let n=e.pending_buf_size-5>e.w_size?e.w_size:e.pending_buf_size-5,r,i,a,o=0,s=e.strm.avail_in;do{if(r=65535,a=e.bi_valid+42>>3,e.strm.avail_out<a||(a=e.strm.avail_out-a,i=e.strstart-e.block_start,r>i+e.strm.avail_in&&(r=i+e.strm.avail_in),r>a&&(r=a),r<n&&(r===0&&t!==4||t===0||r!==i+e.strm.avail_in)))break;o=+(t===4&&r===i+e.strm.avail_in),Ee(e,0,0,o),e.pending_buf[e.pending-4]=r,e.pending_buf[e.pending-3]=r>>8,e.pending_buf[e.pending-2]=~r,e.pending_buf[e.pending-1]=~r>>8,K(e.strm),i&&(i>r&&(i=r),e.strm.output.set(e.window.subarray(e.block_start,e.block_start+i),e.strm.next_out),e.strm.next_out+=i,e.strm.avail_out-=i,e.strm.total_out+=i,e.block_start+=i,r-=i),r&&(dt(e.strm,e.strm.output,e.strm.next_out,r),e.strm.next_out+=r,e.strm.avail_out-=r,e.strm.total_out+=r)}while(o===0);return s-=e.strm.avail_in,s&&(s>=e.w_size?(e.matches=2,e.window.set(e.strm.input.subarray(e.strm.next_in-e.w_size,e.strm.next_in),0),e.strstart=e.w_size,e.insert=e.strstart):(e.window_size-e.strstart<=s&&(e.strstart-=e.w_size,e.window.set(e.window.subarray(e.w_size,e.w_size+e.strstart),0),e.matches<2&&e.matches++,e.insert>e.strstart&&(e.insert=e.strstart)),e.window.set(e.strm.input.subarray(e.strm.next_in-s,e.strm.next_in),e.strstart),e.strstart+=s,e.insert+=s>e.w_size-e.insert?e.w_size-e.insert:s),e.block_start=e.strstart),e.high_water<e.strstart&&(e.high_water=e.strstart),o?at:t!==0&&t!==4&&e.strm.avail_in===0&&e.strstart===e.block_start?it:(a=e.window_size-e.strstart,e.strm.avail_in>a&&e.block_start>=e.w_size&&(e.block_start-=e.w_size,e.strstart-=e.w_size,e.window.set(e.window.subarray(e.w_size,e.w_size+e.strstart),0),e.matches<2&&e.matches++,a+=e.w_size,e.insert>e.strstart&&(e.insert=e.strstart)),a>e.strm.avail_in&&(a=e.strm.avail_in),a&&(dt(e.strm,e.window,e.strstart,a),e.strstart+=a,e.insert+=a>e.w_size-e.insert?e.w_size-e.insert:a),e.high_water<e.strstart&&(e.high_water=e.strstart),a=e.bi_valid+42>>3,a=e.pending_buf_size-a>65535?65535:e.pending_buf_size-a,n=a>e.w_size?e.w_size:a,i=e.strstart-e.block_start,(i>=n||(i||t===4)&&t!==0&&e.strm.avail_in===0&&i<=a)&&(r=i>a?a:i,o=+(t===4&&e.strm.avail_in===0&&r===i),Ee(e,e.block_start,r,o),e.block_start+=r,K(e.strm)),o?H:V)},ht=(e,t)=>{let n,r;for(;;){if(e.lookahead<z){if(pt(e),e.lookahead<z&&t===0)return V;if(e.lookahead===0)break}if(n=0,e.lookahead>=L&&(n=G(e,e.strstart)),n!==0&&e.strstart-n<=e.w_size-z&&(e.match_length=ft(e,n)),e.match_length>=L)if(r=P(e,e.strstart-e.match_start,e.match_length-L),e.lookahead-=e.match_length,e.match_length<=e.max_lazy_match&&e.lookahead>=L){e.match_length--;do e.strstart++,n=G(e,e.strstart);while(--e.match_length!==0);e.strstart++}else e.strstart+=e.match_length,e.match_length=0,e.legacy_hash&&(e.ins_h=e.window[e.strstart],e.ins_h=lt(e,e.ins_h,e.window[e.strstart+1]));else r=P(e,0,e.window[e.strstart]),e.lookahead--,e.strstart++;if(r&&(q(e,!1),e.strm.avail_out===0))return V}return e.insert=e.strstart<L-1?e.strstart:L-1,t===4?(q(e,!0),e.strm.avail_out===0?H:at):e.sym_next&&(q(e,!1),e.strm.avail_out===0)?V:it},gt=(e,t)=>{let n,r,i;for(;;){if(e.lookahead<z){if(pt(e),e.lookahead<z&&t===0)return V;if(e.lookahead===0)break}if(n=0,e.lookahead>=L&&(n=G(e,e.strstart)),e.prev_length=e.match_length,e.prev_match=e.match_start,e.match_length=L-1,n!==0&&e.prev_length<e.max_lazy_match&&e.strstart-n<=e.w_size-z&&(e.match_length=ft(e,n),e.match_length<=5&&(e.strategy===1||e.match_length===L&&e.strstart-e.match_start>4096)&&(e.match_length=L-1)),e.prev_length>=L&&e.match_length<=e.prev_length){i=e.strstart+e.lookahead-L,r=P(e,e.strstart-1-e.prev_match,e.prev_length-L),e.lookahead-=e.prev_length-1,e.prev_length-=2;do++e.strstart<=i&&(n=G(e,e.strstart));while(--e.prev_length!==0);if(e.match_available=0,e.match_length=L-1,e.strstart++,r&&(q(e,!1),e.strm.avail_out===0))return V}else if(e.match_available){if(r=P(e,0,e.window[e.strstart-1]),r&&q(e,!1),e.strstart++,e.lookahead--,e.strm.avail_out===0)return V}else e.match_available=1,e.strstart++,e.lookahead--}return e.match_available&&(r=P(e,0,e.window[e.strstart-1]),e.match_available=0),e.insert=e.strstart<L-1?e.strstart:L-1,t===4?(q(e,!0),e.strm.avail_out===0?H:at):e.sym_next&&(q(e,!1),e.strm.avail_out===0)?V:it},_t=(e,t)=>{let n,r,i,a,o=e.window;for(;;){if(e.lookahead<=R){if(pt(e),e.lookahead<=R&&t===0)return V;if(e.lookahead===0)break}if(e.match_length=0,e.lookahead>=L&&e.strstart>0&&(i=e.strstart-1,r=o[i],r===o[++i]&&r===o[++i]&&r===o[++i])){a=e.strstart+R;do;while(r===o[++i]&&r===o[++i]&&r===o[++i]&&r===o[++i]&&r===o[++i]&&r===o[++i]&&r===o[++i]&&r===o[++i]&&i<a);e.match_length=R-(a-i),e.match_length>e.lookahead&&(e.match_length=e.lookahead)}if(e.match_length>=L?(n=P(e,1,e.match_length-L),e.lookahead-=e.match_length,e.strstart+=e.match_length,e.match_length=0):(n=P(e,0,e.window[e.strstart]),e.lookahead--,e.strstart++),n&&(q(e,!1),e.strm.avail_out===0))return V}return e.insert=0,t===4?(q(e,!0),e.strm.avail_out===0?H:at):e.sym_next&&(q(e,!1),e.strm.avail_out===0)?V:it},vt=(e,t)=>{let n;for(;;){if(e.lookahead===0&&(pt(e),e.lookahead===0)){if(t===0)return V;break}if(e.match_length=0,n=P(e,0,e.window[e.strstart]),e.lookahead--,e.strstart++,n&&(q(e,!1),e.strm.avail_out===0))return V}return e.insert=0,t===4?(q(e,!0),e.strm.avail_out===0?H:at):e.sym_next&&(q(e,!1),e.strm.avail_out===0)?V:it},Y=class{constructor(e,t,n,r,i){this.good_length=e,this.max_lazy=t,this.nice_length=n,this.max_chain=r,this.func=i}},yt=[new Y(0,0,0,0,mt),new Y(4,4,8,4,ht),new Y(4,5,16,8,ht),new Y(4,6,32,32,ht),new Y(4,4,16,16,gt),new Y(8,16,32,32,gt),new Y(8,16,128,128,gt),new Y(8,32,128,256,gt),new Y(32,128,258,1024,gt),new Y(32,258,258,4096,gt)],bt=e=>{e.window_size=2*e.w_size,W(e.head),e.max_lazy_match=yt[e.level].max_lazy,e.good_match=yt[e.level].good_length,e.nice_match=yt[e.level].nice_length,e.max_chain_length=yt[e.level].max_chain,e.strstart=0,e.block_start=0,e.lookahead=0,e.insert=0,e.match_length=e.prev_length=L-1,e.match_available=0,e.ins_h=0},xt=class{constructor(){this.strm=null,this.status=0,this.pending_buf=null,this.pending_buf_size=0,this.pending_out=0,this.pending=0,this.wrap=0,this.gzhead=null,this.gzindex=0,this.method=8,this.last_flush=-1,this.w_size=0,this.w_bits=0,this.w_mask=0,this.window=null,this.window_size=0,this.prev=null,this.head=null,this.ins_h=0,this.legacy_hash=0,this.hash_size=0,this.hash_bits=0,this.hash_mask=0,this.hash_shift=0,this.block_start=0,this.match_length=0,this.prev_match=0,this.match_available=0,this.strstart=0,this.match_start=0,this.lookahead=0,this.prev_length=0,this.max_chain_length=0,this.max_lazy_match=0,this.level=0,this.strategy=0,this.good_match=0,this.nice_match=0,this.dyn_ltree=new Uint16Array(Ye*2),this.dyn_dtree=new Uint16Array(122),this.bl_tree=new Uint16Array(78),W(this.dyn_ltree),W(this.dyn_dtree),W(this.bl_tree),this.l_desc=null,this.d_desc=null,this.bl_desc=null,this.bl_count=new Uint16Array(16),this.heap=new Uint16Array(573),W(this.heap),this.heap_len=0,this.heap_max=0,this.depth=new Uint16Array(573),W(this.depth),this.sym_buf=0,this.lit_bufsize=0,this.sym_next=0,this.sym_end=0,this.opt_len=0,this.static_len=0,this.matches=0,this.insert=0,this.bi_buf=0,this.bi_valid=0}},St=e=>{if(!e)return 1;let t=e.state;return+(!t||t.strm!==e||t.status!==Ze&&t.status!==Qe&&t.status!==$e&&t.status!==et&&t.status!==tt&&t.status!==nt&&t.status!==B&&t.status!==rt)},Ct=e=>{if(St(e))return U(e,-2);e.total_in=e.total_out=0,e.data_type=2;let t=e.state;return t.pending=0,t.pending_out=0,t.wrap<0&&(t.wrap=-t.wrap),t.status=t.wrap===2?Qe:t.wrap?Ze:B,e.adler=t.wrap===2?0:1,t.last_flush=-2,Te(t),0},wt=e=>{let t=Ct(e);return t===0&&bt(e.state),t},Tt=(e,t)=>St(e)||e.state.wrap!==2?-2:(e.state.gzhead=t,0),Et=(e,t,n,r,i,a,o)=>{if(!e)return-2;let s=1;if(t===-1&&(t=6),r<0?(s=0,r=-r):r>15&&(s=2,r-=16),i<1||i>Ke||n!==8||r<8||r>15||t<0||t>9||a<0||a>4||r===8&&s!==1)return U(e,-2);r===8&&(r=9);let c=new xt;return e.state=c,c.strm=e,c.status=Ze,c.wrap=s,c.gzhead=null,c.w_bits=r,c.w_size=1<<c.w_bits,c.w_mask=c.w_size-1,c.legacy_hash=+!!o,c.hash_bits=i+7,!c.legacy_hash&&c.hash_bits<15&&(c.hash_bits=15),c.hash_size=1<<c.hash_bits,c.hash_mask=c.hash_size-1,c.hash_shift=~~((c.hash_bits+L-1)/L),c.window=new Uint8Array(c.w_size*2),c.head=new Uint16Array(c.hash_size),c.prev=new Uint16Array(c.w_size),c.lit_bufsize=1<<i+6,c.pending_buf_size=c.lit_bufsize*4,c.pending_buf=new Uint8Array(c.pending_buf_size),c.sym_buf=c.lit_bufsize,c.sym_end=(c.lit_bufsize-1)*3,c.level=t,c.strategy=a,c.method=n,wt(e)},Dt=(e,t)=>Et(e,t,8,qe,Je,0),Ot=(e,t)=>{if(St(e)||t>5||t<0)return e?U(e,-2):-2;let n=e.state;if(!e.output||e.avail_in!==0&&!e.input||n.status===rt&&t!==4)return U(e,e.avail_out===0?-5:-2);let r=n.last_flush;if(n.last_flush=t,n.pending!==0){if(K(e),e.avail_out===0)return n.last_flush=-1,0}else if(e.avail_in===0&&st(t)<=st(r)&&t!==4)return U(e,-5);if(n.status===rt&&e.avail_in!==0)return U(e,-5);if(n.status===Ze&&n.wrap===0&&(n.status=B),n.status===Ze){let t=8+(n.w_bits-8<<4)<<8,r=-1;if(r=n.strategy>=2||n.level<2?0:n.level<6?1:n.level===6?2:3,t|=r<<6,n.strstart!==0&&(t|=Xe),t+=31-t%31,ut(n,t),n.strstart!==0&&(ut(n,e.adler>>>16),ut(n,e.adler&65535)),e.adler=1,n.status=B,K(e),n.pending!==0)return n.last_flush=-1,0}if(n.status===Qe){if(e.adler=0,J(n,31),J(n,139),J(n,8),n.gzhead)J(n,+!!n.gzhead.text+(n.gzhead.hcrc?2:0)+(n.gzhead.extra?4:0)+(n.gzhead.name?8:0)+(n.gzhead.comment?16:0)),J(n,n.gzhead.time&255),J(n,n.gzhead.time>>8&255),J(n,n.gzhead.time>>16&255),J(n,n.gzhead.time>>24&255),J(n,n.level===9?2:n.strategy>=2||n.level<2?4:0),J(n,n.gzhead.os&255),n.gzhead.extra&&n.gzhead.extra.length&&(J(n,n.gzhead.extra.length&255),J(n,n.gzhead.extra.length>>8&255)),n.gzhead.hcrc&&(e.adler=F(e.adler,n.pending_buf,n.pending,0)),n.gzindex=0,n.status=$e;else if(J(n,0),J(n,0),J(n,0),J(n,0),J(n,0),J(n,n.level===9?2:n.strategy>=2||n.level<2?4:0),J(n,ot),n.status=B,K(e),n.pending!==0)return n.last_flush=-1,0}if(n.status===$e){if(n.gzhead.extra){let t=n.pending,r=(n.gzhead.extra.length&65535)-n.gzindex;for(;n.pending+r>n.pending_buf_size;){let i=n.pending_buf_size-n.pending;if(n.pending_buf.set(n.gzhead.extra.subarray(n.gzindex,n.gzindex+i),n.pending),n.pending=n.pending_buf_size,n.gzhead.hcrc&&n.pending>t&&(e.adler=F(e.adler,n.pending_buf,n.pending-t,t)),n.gzindex+=i,K(e),n.pending!==0)return n.last_flush=-1,0;t=0,r-=i}let i=new Uint8Array(n.gzhead.extra);n.pending_buf.set(i.subarray(n.gzindex,n.gzindex+r),n.pending),n.pending+=r,n.gzhead.hcrc&&n.pending>t&&(e.adler=F(e.adler,n.pending_buf,n.pending-t,t)),n.gzindex=0}n.status=et}if(n.status===et){if(n.gzhead.name){let t=n.pending,r;do{if(n.pending===n.pending_buf_size){if(n.gzhead.hcrc&&n.pending>t&&(e.adler=F(e.adler,n.pending_buf,n.pending-t,t)),K(e),n.pending!==0)return n.last_flush=-1,0;t=0}r=n.gzindex<n.gzhead.name.length?n.gzhead.name.charCodeAt(n.gzindex++)&255:0,J(n,r)}while(r!==0);n.gzhead.hcrc&&n.pending>t&&(e.adler=F(e.adler,n.pending_buf,n.pending-t,t)),n.gzindex=0}n.status=tt}if(n.status===tt){if(n.gzhead.comment){let t=n.pending,r;do{if(n.pending===n.pending_buf_size){if(n.gzhead.hcrc&&n.pending>t&&(e.adler=F(e.adler,n.pending_buf,n.pending-t,t)),K(e),n.pending!==0)return n.last_flush=-1,0;t=0}r=n.gzindex<n.gzhead.comment.length?n.gzhead.comment.charCodeAt(n.gzindex++)&255:0,J(n,r)}while(r!==0);n.gzhead.hcrc&&n.pending>t&&(e.adler=F(e.adler,n.pending_buf,n.pending-t,t))}n.status=nt}if(n.status===nt){if(n.gzhead.hcrc){if(n.pending+2>n.pending_buf_size&&(K(e),n.pending!==0))return n.last_flush=-1,0;J(n,e.adler&255),J(n,e.adler>>8&255),e.adler=0}if(n.status=B,K(e),n.pending!==0)return n.last_flush=-1,0}if(e.avail_in!==0||n.lookahead!==0||t!==0&&n.status!==rt){let r=n.level===0?mt(n,t):n.strategy===2?vt(n,t):n.strategy===3?_t(n,t):yt[n.level].func(n,t);if((r===H||r===at)&&(n.status=rt),r===V||r===H)return e.avail_out===0&&(n.last_flush=-1),0;if(r===it&&(t===1?De(n):t!==5&&(Ee(n,0,0,!1),t===3&&(W(n.head),n.lookahead===0&&(n.strstart=0,n.block_start=0,n.insert=0))),K(e),e.avail_out===0))return n.last_flush=-1,0}return t===4?n.wrap<=0?1:(n.wrap===2?(J(n,e.adler&255),J(n,e.adler>>8&255),J(n,e.adler>>16&255),J(n,e.adler>>24&255),J(n,e.total_in&255),J(n,e.total_in>>8&255),J(n,e.total_in>>16&255),J(n,e.total_in>>24&255)):(ut(n,e.adler>>>16),ut(n,e.adler&65535)),K(e),n.wrap>0&&(n.wrap=-n.wrap),+(n.pending===0)):0},kt=e=>{if(St(e))return-2;let t=e.state.status;return e.state=null,t===B?U(e,-3):0},At=(e,t)=>{let n=t.length;if(St(e))return-2;let r=e.state,i=r.wrap;if(i===2||i===1&&r.status!==Ze||r.lookahead)return-2;if(i===1&&(e.adler=ke(e.adler,t,n,0)),r.wrap=0,n>=r.w_size){i===0&&(W(r.head),r.strstart=0,r.block_start=0,r.insert=0);let e=new Uint8Array(r.w_size);e.set(t.subarray(n-r.w_size,n),0),t=e,n=r.w_size}let a=e.avail_in,o=e.next_in,s=e.input;for(e.avail_in=n,e.next_in=0,e.input=t,pt(r);r.lookahead>=L;){let e=r.strstart,t=r.lookahead-(L-1);do G(r,e),e++;while(--t);r.strstart=e,r.lookahead=L-1,pt(r)}return r.strstart+=r.lookahead,r.block_start=r.strstart,r.insert=r.lookahead,r.lookahead=0,r.match_length=r.prev_length=L-1,r.match_available=0,e.next_in=o,e.input=s,e.avail_in=a,r.wrap=i,0},jt=16209,Mt=16191;function Nt(e,t){let n,r,i,a,o,s,c,l,u,d,f,p,m,h,g,_,v,y,b,x,S,C,w,T,E=e.state;n=e.next_in,w=e.input,r=n+(e.avail_in-5),i=e.next_out,T=e.output,a=i-(t-e.avail_out),o=i+(e.avail_out-257),s=E.dmax,c=E.wsize,l=E.whave,u=E.wnext,d=E.window,f=E.hold,p=E.bits,m=E.lencode,h=E.distcode,g=(1<<E.lenbits)-1,_=(1<<E.distbits)-1;top:do{p<15&&(f+=w[n++]<<p,p+=8,f+=w[n++]<<p,p+=8),v=m[f&g];dolen:for(;;){if(y=v>>>24,f>>>=y,p-=y,y=v>>>16&255,y===0)T[i++]=v&65535;else if(y&16){b=v&65535,y&=15,y&&(p<y&&(f+=w[n++]<<p,p+=8),b+=f&(1<<y)-1,f>>>=y,p-=y),p<15&&(f+=w[n++]<<p,p+=8,f+=w[n++]<<p,p+=8),v=h[f&_];dodist:for(;;){if(y=v>>>24,f>>>=y,p-=y,y=v>>>16&255,y&16){if(x=v&65535,y&=15,p<y&&(f+=w[n++]<<p,p+=8,p<y&&(f+=w[n++]<<p,p+=8)),x+=f&(1<<y)-1,x>s){e.msg=`invalid distance too far back`,E.mode=jt;break top}if(f>>>=y,p-=y,y=i-a,x>y){if(y=x-y,y>l&&E.sane){e.msg=`invalid distance too far back`,E.mode=jt;break top}if(S=0,C=d,u===0){if(S+=c-y,y<b){b-=y;do T[i++]=d[S++];while(--y);S=i-x,C=T}}else if(u<y){if(S+=c+u-y,y-=u,y<b){b-=y;do T[i++]=d[S++];while(--y);if(S=0,u<b){y=u,b-=y;do T[i++]=d[S++];while(--y);S=i-x,C=T}}}else if(S+=u-y,y<b){b-=y;do T[i++]=d[S++];while(--y);S=i-x,C=T}for(;b>2;)T[i++]=C[S++],T[i++]=C[S++],T[i++]=C[S++],b-=3;b&&(T[i++]=C[S++],b>1&&(T[i++]=C[S++]))}else{S=i-x;do T[i++]=T[S++],T[i++]=T[S++],T[i++]=T[S++],b-=3;while(b>2);b&&(T[i++]=T[S++],b>1&&(T[i++]=T[S++]))}}else if(y&64){e.msg=`invalid distance code`,E.mode=jt;break top}else{v=h[(v&65535)+(f&(1<<y)-1)];continue dodist}break}}else if(!(y&64)){v=m[(v&65535)+(f&(1<<y)-1)];continue dolen}else if(y&32){E.mode=Mt;break top}else{e.msg=`invalid literal/length code`,E.mode=jt;break top}break}}while(n<r&&i<o);b=p>>3,n-=b,p-=b<<3,f&=(1<<p)-1,e.next_in=n,e.next_out=i,e.avail_in=n<r?5+(r-n):5-(n-r),e.avail_out=i<o?257+(o-i):257-(i-o),E.hold=f,E.bits=p}var Pt=15,Ft=852,It=592,Lt=0,Rt=1,zt=2,Bt=new Uint16Array([3,4,5,6,7,8,9,10,11,13,15,17,19,23,27,31,35,43,51,59,67,83,99,115,131,163,195,227,258,0,0]),Vt=new Uint8Array([16,16,16,16,16,16,16,16,17,17,17,17,18,18,18,18,19,19,19,19,20,20,20,20,21,21,21,21,16,199,75]),Ht=new Uint16Array([1,2,3,4,5,7,9,13,17,25,33,49,65,97,129,193,257,385,513,769,1025,1537,2049,3073,4097,6145,8193,12289,16385,24577,0,0]),Ut=new Uint8Array([16,16,16,16,17,17,18,18,19,19,20,20,21,21,22,22,23,23,24,24,25,25,26,26,27,27,28,28,29,29,64,64]),Wt=(e,t,n,r,i,a,o,s)=>{let c=s.bits,l=0,u=0,d=0,f=0,p=0,m=0,h=0,g=0,_=0,v=0,y,b,x,S,C,w=null,T,E=new Uint16Array(16),D=new Uint16Array(16),O=null,k,A,j;for(l=0;l<=Pt;l++)E[l]=0;for(u=0;u<r;u++)E[t[n+u]]++;for(p=c,f=Pt;f>=1&&E[f]===0;f--);if(p>f&&(p=f),f===0)return i[a++]=20971520,i[a++]=20971520,s.bits=1,0;for(d=1;d<f&&E[d]===0;d++);for(p<d&&(p=d),g=1,l=1;l<=Pt;l++)if(g<<=1,g-=E[l],g<0)return-1;if(g>0&&(e===Lt||f!==1))return-1;for(D[1]=0,l=1;l<Pt;l++)D[l+1]=D[l]+E[l];for(u=0;u<r;u++)t[n+u]!==0&&(o[D[t[n+u]]++]=u);if(e===Lt?(w=O=o,T=20):e===Rt?(w=Bt,O=Vt,T=257):(w=Ht,O=Ut,T=0),v=0,u=0,l=d,C=a,m=p,h=0,x=-1,_=1<<p,S=_-1,e===Rt&&_>Ft||e===zt&&_>It)return 1;for(;;){k=l-h,o[u]+1<T?(A=0,j=o[u]):o[u]>=T?(A=O[o[u]-T],j=w[o[u]-T]):(A=96,j=0),y=1<<l-h,b=1<<m,d=b;do b-=y,i[C+(v>>h)+b]=k<<24|A<<16|j|0;while(b!==0);for(y=1<<l-1;v&y;)y>>=1;if(y===0?v=0:(v&=y-1,v+=y),u++,--E[l]===0){if(l===f)break;l=t[n+o[u]]}if(l>p&&(v&S)!==x){for(h===0&&(h=p),C+=d,m=l-h,g=1<<m;m+h<f&&(g-=E[m+h],!(g<=0));)m++,g<<=1;if(_+=1<<m,e===Rt&&_>Ft||e===zt&&_>It)return 1;x=v&S,i[x]=p<<24|m<<16|C-a|0}}return v!==0&&(i[C+v]=l-h<<24|4194304),s.bits=p,0},Gt=0,Kt=1,qt=2,Jt=16180,Yt=16181,Xt=16182,Zt=16183,Qt=16184,$t=16185,en=16186,tn=16187,nn=16188,rn=16189,an=16190,X=16191,on=16192,sn=16193,cn=16194,ln=16195,un=16196,dn=16197,fn=16198,pn=16199,mn=16200,hn=16201,gn=16202,_n=16203,vn=16204,yn=16205,bn=16206,xn=16207,Sn=16208,Z=16209,Cn=16210,wn=16211,Tn=852,En=592,Dn=15,On=e=>(e>>>24&255)+(e>>>8&65280)+((e&65280)<<8)+((e&255)<<24),kn=class{constructor(){this.strm=null,this.mode=0,this.last=!1,this.wrap=0,this.havedict=!1,this.flags=0,this.dmax=0,this.check=0,this.total=0,this.head=null,this.wbits=0,this.wsize=0,this.whave=0,this.wnext=0,this.window=null,this.hold=0,this.bits=0,this.length=0,this.offset=0,this.extra=0,this.lencode=null,this.distcode=null,this.lenbits=0,this.distbits=0,this.ncode=0,this.nlen=0,this.ndist=0,this.have=0,this.next=null,this.lens=new Uint16Array(320),this.work=new Uint16Array(288),this.lendyn=null,this.distdyn=null,this.sane=0,this.back=0,this.was=0}},Q=e=>{if(!e)return 1;let t=e.state;return+(!t||t.strm!==e||t.mode<Jt||t.mode>wn)},An=e=>{if(Q(e))return-2;let t=e.state;return e.total_in=e.total_out=t.total=0,e.msg=``,t.wrap&&(e.adler=t.wrap&1),t.mode=Jt,t.last=0,t.havedict=0,t.flags=-1,t.dmax=32768,t.head=null,t.hold=0,t.bits=0,t.lencode=t.lendyn=new Int32Array(Tn),t.distcode=t.distdyn=new Int32Array(En),t.sane=1,t.back=-1,0},jn=e=>{if(Q(e))return-2;let t=e.state;return t.wsize=0,t.whave=0,t.wnext=0,An(e)},Mn=(e,t)=>{let n;if(Q(e))return-2;let r=e.state;return t<0?(n=0,t=-t):(n=(t>>4)+5,t<48&&(t&=15)),t&&(t<8||t>15)?-2:(r.window!==null&&r.wbits!==t&&(r.window=null),r.wrap=n,r.wbits=t,jn(e))},Nn=(e,t)=>{if(!e)return-2;let n=new kn;e.state=n,n.strm=e,n.window=null,n.mode=Jt;let r=Mn(e,t);return r!==0&&(e.state=null),r},Pn=e=>Nn(e,Dn),Fn=!0,In,Ln,Rn=e=>{if(Fn){In=new Int32Array(512),Ln=new Int32Array(32);let t=0;for(;t<144;)e.lens[t++]=8;for(;t<256;)e.lens[t++]=9;for(;t<280;)e.lens[t++]=7;for(;t<288;)e.lens[t++]=8;for(Wt(Kt,e.lens,0,288,In,0,e.work,{bits:9}),t=0;t<32;)e.lens[t++]=5;Wt(qt,e.lens,0,32,Ln,0,e.work,{bits:5}),Fn=!1}e.lencode=In,e.lenbits=9,e.distcode=Ln,e.distbits=5},zn=(e,t,n,r)=>{let i,a=e.state;return a.window===null&&(a.window=new Uint8Array(1<<a.wbits)),a.wsize===0&&(a.wsize=1<<a.wbits,a.wnext=0,a.whave=0),r>=a.wsize?(a.window.set(t.subarray(n-a.wsize,n),0),a.wnext=0,a.whave=a.wsize):(i=a.wsize-a.wnext,i>r&&(i=r),a.window.set(t.subarray(n-r,n-r+i),a.wnext),r-=i,r?(a.window.set(t.subarray(n-r,n),0),a.wnext=r,a.whave=a.wsize):(a.wnext+=i,a.wnext===a.wsize&&(a.wnext=0),a.whave<a.wsize&&(a.whave+=i))),0},Bn=(e,t)=>{let n,r,i,a,o,s,c,l,u,d,f,p,m,h,g=0,_,v,y,b,x,S,C,w,T=new Uint8Array(4),E,D,O=new Uint8Array([16,17,18,0,8,7,9,6,10,5,11,4,12,3,13,2,14,1,15]);if(Q(e)||!e.output||!e.input&&e.avail_in!==0)return-2;n=e.state,n.mode===X&&(n.mode=on),o=e.next_out,i=e.output,c=e.avail_out,a=e.next_in,r=e.input,s=e.avail_in,l=n.hold,u=n.bits,d=s,f=c,w=0;inf_leave:for(;;)switch(n.mode){case Jt:if(n.wrap===0){n.mode=on;break}for(;u<16;){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}if(n.wrap&2&&l===35615){n.wbits===0&&(n.wbits=15),n.check=0,T[0]=l&255,T[1]=l>>>8&255,n.check=F(n.check,T,2,0),l=0,u=0,n.mode=Yt;break}if(n.head&&(n.head.done=!1),!(n.wrap&1)||(((l&255)<<8)+(l>>8))%31){e.msg=`incorrect header check`,n.mode=Z;break}if((l&15)!=8){e.msg=`unknown compression method`,n.mode=Z;break}if(l>>>=4,u-=4,C=(l&15)+8,n.wbits===0&&(n.wbits=C),C>15||C>n.wbits){e.msg=`invalid window size`,n.mode=Z;break}n.dmax=1<<n.wbits,n.flags=0,e.adler=n.check=1,n.mode=l&512?rn:X,l=0,u=0;break;case Yt:for(;u<16;){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}if(n.flags=l,(n.flags&255)!=8){e.msg=`unknown compression method`,n.mode=Z;break}if(n.flags&57344){e.msg=`unknown header flags set`,n.mode=Z;break}n.head&&(n.head.text=l>>8&1),n.flags&512&&n.wrap&4&&(T[0]=l&255,T[1]=l>>>8&255,n.check=F(n.check,T,2,0)),l=0,u=0,n.mode=Xt;case Xt:for(;u<32;){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}n.head&&(n.head.time=l),n.flags&512&&n.wrap&4&&(T[0]=l&255,T[1]=l>>>8&255,T[2]=l>>>16&255,T[3]=l>>>24&255,n.check=F(n.check,T,4,0)),l=0,u=0,n.mode=Zt;case Zt:for(;u<16;){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}n.head&&(n.head.xflags=l&255,n.head.os=l>>8),n.flags&512&&n.wrap&4&&(T[0]=l&255,T[1]=l>>>8&255,n.check=F(n.check,T,2,0)),l=0,u=0,n.mode=Qt;case Qt:if(n.flags&1024){for(;u<16;){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}n.length=l,n.head&&(n.head.extra_len=l),n.flags&512&&n.wrap&4&&(T[0]=l&255,T[1]=l>>>8&255,n.check=F(n.check,T,2,0)),l=0,u=0}else n.head&&(n.head.extra=null);n.mode=$t;case $t:if(n.flags&1024&&(p=n.length,p>s&&(p=s),p&&(n.head&&(C=n.head.extra_len-n.length,n.head.extra||(n.head.extra=new Uint8Array(n.head.extra_len)),n.head.extra.set(r.subarray(a,a+p),C)),n.flags&512&&n.wrap&4&&(n.check=F(n.check,r,p,a)),s-=p,a+=p,n.length-=p),n.length))break inf_leave;n.length=0,n.mode=en;case en:if(n.flags&2048){if(s===0)break inf_leave;p=0;do C=r[a+p++],n.head&&C&&n.length<65536&&(n.head.name+=String.fromCharCode(C));while(C&&p<s);if(n.flags&512&&n.wrap&4&&(n.check=F(n.check,r,p,a)),s-=p,a+=p,C)break inf_leave}else n.head&&(n.head.name=null);n.length=0,n.mode=tn;case tn:if(n.flags&4096){if(s===0)break inf_leave;p=0;do C=r[a+p++],n.head&&C&&n.length<65536&&(n.head.comment+=String.fromCharCode(C));while(C&&p<s);if(n.flags&512&&n.wrap&4&&(n.check=F(n.check,r,p,a)),s-=p,a+=p,C)break inf_leave}else n.head&&(n.head.comment=null);n.mode=nn;case nn:if(n.flags&512){for(;u<16;){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}if(n.wrap&4&&l!==(n.check&65535)){e.msg=`header crc mismatch`,n.mode=Z;break}l=0,u=0}n.head&&(n.head.hcrc=n.flags>>9&1,n.head.done=!0),e.adler=n.check=0,n.mode=X;break;case rn:for(;u<32;){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}e.adler=n.check=On(l),l=0,u=0,n.mode=an;case an:if(n.havedict===0)return e.next_out=o,e.avail_out=c,e.next_in=a,e.avail_in=s,n.hold=l,n.bits=u,2;e.adler=n.check=1,n.mode=X;case X:if(t===5||t===6)break inf_leave;case on:if(n.last){l>>>=u&7,u-=u&7,n.mode=bn;break}for(;u<3;){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}switch(n.last=l&1,l>>>=1,--u,l&3){case 0:n.mode=sn;break;case 1:if(Rn(n),n.mode=pn,t===6){l>>>=2,u-=2;break inf_leave}break;case 2:n.mode=un;break;case 3:e.msg=`invalid block type`,n.mode=Z}l>>>=2,u-=2;break;case sn:for(l>>>=u&7,u-=u&7;u<32;){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}if((l&65535)!=(l>>>16^65535)){e.msg=`invalid stored block lengths`,n.mode=Z;break}if(n.length=l&65535,l=0,u=0,n.mode=cn,t===6)break inf_leave;case cn:n.mode=ln;case ln:if(p=n.length,p){if(p>s&&(p=s),p>c&&(p=c),p===0)break inf_leave;i.set(r.subarray(a,a+p),o),s-=p,a+=p,c-=p,o+=p,n.length-=p;break}n.mode=X;break;case un:for(;u<14;){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}if(n.nlen=(l&31)+257,l>>>=5,u-=5,n.ndist=(l&31)+1,l>>>=5,u-=5,n.ncode=(l&15)+4,l>>>=4,u-=4,n.nlen>286||n.ndist>30){e.msg=`too many length or distance symbols`,n.mode=Z;break}n.have=0,n.mode=dn;case dn:for(;n.have<n.ncode;){for(;u<3;){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}n.lens[O[n.have++]]=l&7,l>>>=3,u-=3}for(;n.have<19;)n.lens[O[n.have++]]=0;if(n.lencode=n.lendyn,n.lenbits=7,E={bits:n.lenbits},w=Wt(Gt,n.lens,0,19,n.lencode,0,n.work,E),n.lenbits=E.bits,w){e.msg=`invalid code lengths set`,n.mode=Z;break}n.have=0,n.mode=fn;case fn:for(;n.have<n.nlen+n.ndist;){for(;g=n.lencode[l&(1<<n.lenbits)-1],_=g>>>24,v=g>>>16&255,y=g&65535,!(_<=u);){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}if(y<16)l>>>=_,u-=_,n.lens[n.have++]=y;else{if(y===16){for(D=_+2;u<D;){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}if(l>>>=_,u-=_,n.have===0){e.msg=`invalid bit length repeat`,n.mode=Z;break}C=n.lens[n.have-1],p=3+(l&3),l>>>=2,u-=2}else if(y===17){for(D=_+3;u<D;){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}l>>>=_,u-=_,C=0,p=3+(l&7),l>>>=3,u-=3}else{for(D=_+7;u<D;){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}l>>>=_,u-=_,C=0,p=11+(l&127),l>>>=7,u-=7}if(n.have+p>n.nlen+n.ndist){e.msg=`invalid bit length repeat`,n.mode=Z;break}for(;p--;)n.lens[n.have++]=C}}if(n.mode===Z)break;if(n.lens[256]===0){e.msg=`invalid code -- missing end-of-block`,n.mode=Z;break}if(n.lenbits=9,E={bits:n.lenbits},w=Wt(Kt,n.lens,0,n.nlen,n.lencode,0,n.work,E),n.lenbits=E.bits,w){e.msg=`invalid literal/lengths set`,n.mode=Z;break}if(n.distbits=6,n.distcode=n.distdyn,E={bits:n.distbits},w=Wt(qt,n.lens,n.nlen,n.ndist,n.distcode,0,n.work,E),n.distbits=E.bits,w){e.msg=`invalid distances set`,n.mode=Z;break}if(n.mode=pn,t===6)break inf_leave;case pn:n.mode=mn;case mn:if(s>=6&&c>=258){e.next_out=o,e.avail_out=c,e.next_in=a,e.avail_in=s,n.hold=l,n.bits=u,Nt(e,f),o=e.next_out,i=e.output,c=e.avail_out,a=e.next_in,r=e.input,s=e.avail_in,l=n.hold,u=n.bits,n.mode===X&&(n.back=-1);break}for(n.back=0;g=n.lencode[l&(1<<n.lenbits)-1],_=g>>>24,v=g>>>16&255,y=g&65535,!(_<=u);){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}if(v&&!(v&240)){for(b=_,x=v,S=y;g=n.lencode[S+((l&(1<<b+x)-1)>>b)],_=g>>>24,v=g>>>16&255,y=g&65535,!(b+_<=u);){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}l>>>=b,u-=b,n.back+=b}if(l>>>=_,u-=_,n.back+=_,n.length=y,v===0){n.mode=yn;break}if(v&32){n.back=-1,n.mode=X;break}if(v&64){e.msg=`invalid literal/length code`,n.mode=Z;break}n.extra=v&15,n.mode=hn;case hn:if(n.extra){for(D=n.extra;u<D;){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}n.length+=l&(1<<n.extra)-1,l>>>=n.extra,u-=n.extra,n.back+=n.extra}n.was=n.length,n.mode=gn;case gn:for(;g=n.distcode[l&(1<<n.distbits)-1],_=g>>>24,v=g>>>16&255,y=g&65535,!(_<=u);){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}if(!(v&240)){for(b=_,x=v,S=y;g=n.distcode[S+((l&(1<<b+x)-1)>>b)],_=g>>>24,v=g>>>16&255,y=g&65535,!(b+_<=u);){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}l>>>=b,u-=b,n.back+=b}if(l>>>=_,u-=_,n.back+=_,v&64){e.msg=`invalid distance code`,n.mode=Z;break}n.offset=y,n.extra=v&15,n.mode=_n;case _n:if(n.extra){for(D=n.extra;u<D;){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}n.offset+=l&(1<<n.extra)-1,l>>>=n.extra,u-=n.extra,n.back+=n.extra}if(n.offset>n.dmax){e.msg=`invalid distance too far back`,n.mode=Z;break}n.mode=vn;case vn:if(c===0)break inf_leave;if(p=f-c,n.offset>p){if(p=n.offset-p,p>n.whave&&n.sane){e.msg=`invalid distance too far back`,n.mode=Z;break}p>n.wnext?(p-=n.wnext,m=n.wsize-p):m=n.wnext-p,p>n.length&&(p=n.length),h=n.window}else h=i,m=o-n.offset,p=n.length;p>c&&(p=c),c-=p,n.length-=p;do i[o++]=h[m++];while(--p);n.length===0&&(n.mode=mn);break;case yn:if(c===0)break inf_leave;i[o++]=n.length,c--,n.mode=mn;break;case bn:if(n.wrap){for(;u<32;){if(s===0)break inf_leave;s--,l|=r[a++]<<u,u+=8}if(f-=c,e.total_out+=f,n.total+=f,n.wrap&4&&f&&(e.adler=n.check=n.flags?F(n.check,i,f,o-f):ke(n.check,i,f,o-f)),f=c,n.wrap&4&&(n.flags?l:On(l))!==n.check){e.msg=`incorrect data check`,n.mode=Z;break}l=0,u=0}n.mode=xn;case xn:if(n.wrap&&n.flags){for(;u<32;){if(s===0)break inf_leave;s--,l+=r[a++]<<u,u+=8}if(n.wrap&4&&l!==(n.total&4294967295)){e.msg=`incorrect length check`,n.mode=Z;break}l=0,u=0}n.mode=Sn;case Sn:w=1;break inf_leave;case Z:w=-3;break inf_leave;case Cn:return-4;case wn:default:return-2}return e.next_out=o,e.avail_out=c,e.next_in=a,e.avail_in=s,n.hold=l,n.bits=u,(n.wsize||f!==e.avail_out&&n.mode<Z&&(n.mode<bn||t!==4))&&zn(e,e.output,e.next_out,f-e.avail_out)?(n.mode=Cn,-4):(d-=e.avail_in,f-=e.avail_out,e.total_in+=d,e.total_out+=f,n.total+=f,n.wrap&4&&f&&(e.adler=n.check=n.flags?F(n.check,i,f,e.next_out-f):ke(n.check,i,f,e.next_out-f)),e.data_type=n.bits+(n.last?64:0)+(n.mode===X?128:0)+(n.mode===pn||n.mode===cn?256:0),(d===0&&f===0||t===4)&&w===0&&(w=-5),w)},Vn=e=>{if(Q(e))return-2;let t=e.state;return t.window&&(t.window=null),e.state=null,0},Hn=(e,t)=>{if(Q(e))return-2;let n=e.state;return n.wrap&2?(n.head=t,t.done=!1,0):-2},Un=(e,t)=>{let n=t.length,r,i,a;return Q(e)||(r=e.state,r.wrap!==0&&r.mode!==an)?-2:r.mode===an&&(i=1,i=ke(i,t,n,0),i!==r.check)?-3:(a=zn(e,t,n,n),a?(r.mode=Cn,-4):(r.havedict=1,0))},Wn=class{constructor(){this.input=null,this.next_in=0,this.avail_in=0,this.total_in=0,this.output=null,this.next_out=0,this.avail_out=0,this.total_out=0,this.msg=``,this.state=null,this.data_type=2,this.adler=0}},Gn=class{constructor(){this.text=0,this.time=0,this.xflags=0,this.os=0,this.extra=null,this.extra_len=0,this.name=``,this.comment=``,this.hcrc=0,this.done=!1}},Kn=e=>{let t=new Uint8Array(e.reduce((e,t)=>e+t.length,0)),n=0;for(let r of e)t.set(r,n),n+=r.length;return t};function qn(e){"@babel/helpers - typeof";return qn=typeof Symbol==`function`&&typeof Symbol.iterator==`symbol`?function(e){return typeof e}:function(e){return e&&typeof Symbol==`function`&&e.constructor===Symbol&&e!==Symbol.prototype?`symbol`:typeof e},qn(e)}function Jn(e,t){if(qn(e)!=`object`||!e)return e;var n=e[Symbol.toPrimitive];if(n!==void 0){var r=n.call(e,t||`default`);if(qn(r)!=`object`)return r;throw TypeError(`@@toPrimitive must return a primitive value.`)}return(t===`string`?String:Number)(e)}function Yn(e){var t=Jn(e,`string`);return qn(t)==`symbol`?t:t+``}function $(e,t,n){return(t=Yn(t))in e?Object.defineProperty(e,t,{value:n,enumerable:!0,configurable:!0,writable:!0}):e[t]=n,e}var Xn=Object.prototype.toString,Zn={level:-1,chunkSize:16384,windowBits:15,memLevel:8,strategy:0,raw:!1,gzip:!1,legacyHash:!1,dictionary:new Uint8Array},Qn=class{constructor(e={}){$(this,`options`,void 0),$(this,`err`,void 0),$(this,`msg`,void 0),$(this,`ended`,void 0),$(this,`started`,void 0),$(this,`chunks`,void 0),$(this,`strm`,void 0),$(this,`result`,void 0),this.options=Object.assign({},Zn,e);let t=this.options;t.raw&&t.windowBits>0?t.windowBits=-t.windowBits:t.gzip&&t.windowBits>0&&t.windowBits<16&&(t.windowBits+=16),this.err=0,this.msg=``,this.ended=!1,this.started=!1,this.chunks=[],this.result=new Uint8Array,this.strm=new Wn,this.strm.avail_out=0;let n=Et(this.strm,t.level,8,t.windowBits,t.memLevel,t.strategy,t.legacyHash);if(n!==0)throw Error(I[n]);Xn.call(t.dictionary)===`[object ArrayBuffer]`&&(t.dictionary=new Uint8Array(t.dictionary));let r=t.dictionary;if(r.length){if(t.gzip)throw Error(`dictionary is not supported with gzip`);if(n=At(this.strm,r),n!==0)throw Error(I[n])}}push(e,t=!1){let n=this.strm,r=this.options.chunkSize,i,a;if(this.ended)return!1;for(a=typeof t==`number`?t:t===!0?4:0,typeof e==`string`?n.input=new TextEncoder().encode(e):Xn.call(e)===`[object ArrayBuffer]`?n.input=new Uint8Array(e):n.input=e,n.next_in=0,n.avail_in=n.input.length,this.started||(this.started=!0,this.onStart(n));;){if(n.avail_out===0&&(n.output=new Uint8Array(r),n.next_out=0,n.avail_out=r),(a===2||a===3)&&n.avail_out<=6){this.onData(n.output.subarray(0,n.next_out)),n.avail_out=0;continue}if(i=Ot(n,a),i===-2)break;if(i===1){n.next_out>0&&this.onData(n.output.subarray(0,n.next_out)),i=kt(this.strm);break}if(n.avail_out===0){this.onData(n.output);continue}if(a>0&&n.next_out>0){this.onData(n.output.subarray(0,n.next_out)),n.avail_out=0;continue}if(n.avail_in===0)return!0}return this.err=i,this.msg=n.msg||I[i],this.ended=!0,this.onEnd(i),i===0}onStart(e){}onData(e){this.chunks.push(e)}onEnd(e){e===0&&(this.result=Kn(this.chunks)),this.chunks=[]}};function $n(e,t={}){let n=new Qn(t);if(n.push(e,!0),n.err)throw Error(n.msg);return n.result}function er(e,t={}){return $n(e,Object.assign({},t,{raw:!0}))}function tr(e,t={}){return $n(e,Object.assign({},t,{gzip:!0}))}function nr(e,t){var n=Object.keys(e);if(Object.getOwnPropertySymbols){var r=Object.getOwnPropertySymbols(e);t&&(r=r.filter(function(t){return Object.getOwnPropertyDescriptor(e,t).enumerable})),n.push.apply(n,r)}return n}function rr(e){for(var t=1;t<arguments.length;t++){var n=arguments[t]==null?{}:arguments[t];t%2?nr(Object(n),!0).forEach(function(t){$(e,t,n[t])}):Object.getOwnPropertyDescriptors?Object.defineProperties(e,Object.getOwnPropertyDescriptors(n)):nr(Object(n)).forEach(function(t){Object.defineProperty(e,t,Object.getOwnPropertyDescriptor(n,t))})}return e}var ir=Object.prototype.toString,ar={chunkSize:1024*64,windowBits:15,raw:!1,dictionary:new Uint8Array},or=class{constructor(e={}){$(this,`options`,void 0),$(this,`err`,void 0),$(this,`msg`,void 0),$(this,`ended`,void 0),$(this,`started`,void 0),$(this,`chunks`,void 0),$(this,`strm`,void 0),$(this,`result`,void 0),this.options=Object.assign({},ar,e);let t=this.options;t.raw&&t.windowBits>=0&&t.windowBits<16&&(t.windowBits=-t.windowBits,t.windowBits===0&&(t.windowBits=-15)),t.windowBits>=0&&t.windowBits<16&&!e.windowBits&&(t.windowBits+=32),t.windowBits>15&&t.windowBits<48&&(t.windowBits&15||(t.windowBits|=15)),this.err=0,this.msg=``,this.ended=!1,this.started=!1,this.chunks=[],this.result=new Uint8Array,this.strm=new Wn,this.strm.avail_out=0;let n=Nn(this.strm,t.windowBits);if(n!==0)throw Error(I[n]);ir.call(t.dictionary)===`[object ArrayBuffer]`&&(t.dictionary=new Uint8Array(t.dictionary));let r=t.dictionary;if(t.raw&&r.length&&(n=Un(this.strm,r),n!==0))throw Error(I[n])}push(e,t=!1){let n=this.strm,r=this.options.chunkSize,i,a,o;if(this.ended)return this.err===0;for(a=typeof t==`number`?t:t===!0?4:0,ir.call(e)===`[object ArrayBuffer]`?n.input=new Uint8Array(e):n.input=e,n.next_in=0,n.avail_in=n.input.length,this.started||(this.started=!0,this.onStart(n));;){if(n.avail_out===0&&(n.output=new Uint8Array(r),n.next_out=0,n.avail_out=r),i=Bn(n,a),i===2){let e=this.options.dictionary;e.length&&(i=Un(n,e),i===0?i=Bn(n,a):i===-3&&(i=2))}for(;n.avail_in>0&&i===1&&n.state.wrap&2&&n.state.flags!==0&&n.input[n.next_in]!==0;)jn(n),i=Bn(n,a);if(i===-2||i===-3||i===2||i===-4)break;if(o=n.avail_out,n.next_out&&(n.avail_out===0||i===1||a>0)&&(this.onData(n.output.length===n.next_out?n.output:n.output.subarray(0,n.next_out)),n.avail_out=0,n.next_out=0),!((i===0||i===-5)&&o===0)){if(i===1){i=Vn(this.strm);break}if(n.avail_in===0){if(a===4){i=Vn(this.strm),i===0&&(i=-5);break}return!0}}}return this.err=i,this.msg=n.msg||I[i],this.ended=!0,this.onEnd(i),i===0}onStart(e){}onData(e){this.chunks.push(e)}onEnd(e){e===0&&(this.result=Kn(this.chunks)),this.chunks=[]}};function sr(e,t={}){let n=new or(t);if(n.push(e,!0),n.err)throw Error(n.msg);let r=n.result;return t.toText?new TextDecoder().decode(r):r}function cr(e,t={}){return sr(e,rr(rr({},t),{},{raw:!0}))}e.Deflate=Qn,e.GZheader=Gn,e.Inflate=or,e.ZStream=Wn,e.Z_BLOCK=Ie,e.Z_BUF_ERROR=Ge,e.Z_DATA_ERROR=Ue,e.Z_ERRNO=Ve,e.Z_FINISH=Fe,e.Z_FULL_FLUSH=Pe,e.Z_MEM_ERROR=We,e.Z_NEED_DICT=Be,e.Z_NO_FLUSH=je,e.Z_OK=Re,e.Z_PARTIAL_FLUSH=Me,e.Z_STREAM_END=ze,e.Z_STREAM_ERROR=He,e.Z_SYNC_FLUSH=Ne,e.Z_TREES=Le,e.deflate=$n,e.deflateRaw=er,e.gzip=tr,e.inflate=sr,e.ungzip=sr,e.inflateRaw=cr,e.zlibDeflate=Ot,e.zlibDeflateEnd=kt,e.zlibDeflateInit=Dt,e.zlibDeflateInit2=Et,e.zlibDeflateReset=wt,e.zlibDeflateResetKeep=Ct,e.zlibDeflateSetDictionary=At,e.zlibDeflateSetHeader=Tt,e.zlibInflate=Bn,e.zlibInflateEnd=Vn,e.zlibInflateGetHeader=Hn,e.zlibInflateInit=Pn,e.zlibInflateInit2=Nn,e.zlibInflateReset=jn,e.zlibInflateReset2=Mn,e.zlibInflateResetKeep=An,e.zlibInflateSetDictionary=Un});
+</script>
+<script>
+/* UPNG.js (MIT) — https://github.com/photopea/UPNG.js */
+
+;(function(){
+var UPNG = {};
+
+// Make available for import by `require()`
+var pako;
+if (typeof module == "object") {module.exports = UPNG;}  else {window.UPNG = UPNG;}
+if (typeof require == "function") {pako = require("pako");}  else {pako = window.pako;}
+function log() { if (typeof process=="undefined" || process.env.NODE_ENV=="development") console.log.apply(console, arguments);  }
+(function(UPNG, pako){
+
+	
+
+	
+
+UPNG.toRGBA8 = function(out)
+{
+	var w = out.width, h = out.height;
+	if(out.tabs.acTL==null) return [UPNG.toRGBA8.decodeImage(out.data, w, h, out).buffer];
+	
+	var frms = [];
+	if(out.frames[0].data==null) out.frames[0].data = out.data;
+	
+	var img, empty = new Uint8Array(w*h*4);
+	for(var i=0; i<out.frames.length; i++)
+	{
+		var frm = out.frames[i];
+		var fx=frm.rect.x, fy=frm.rect.y, fw = frm.rect.width, fh = frm.rect.height;
+		var fdata = UPNG.toRGBA8.decodeImage(frm.data, fw,fh, out);
+		
+		if(i==0) img = fdata;
+		else if(frm.blend  ==0) UPNG._copyTile(fdata, fw, fh, img, w, h, fx, fy, 0);
+		else if(frm.blend  ==1) UPNG._copyTile(fdata, fw, fh, img, w, h, fx, fy, 1);
+		
+		frms.push(img.buffer);  img = img.slice(0);
+		
+		if     (frm.dispose==0) {}
+		else if(frm.dispose==1) UPNG._copyTile(empty, fw, fh, img, w, h, fx, fy, 0);
+		else if(frm.dispose==2) {
+			var pi = i-1;
+			while(out.frames[pi].dispose==2) pi--;
+			img = new Uint8Array(frms[pi]).slice(0);
+		}
+	}
+	return frms;
+}
+UPNG.toRGBA8.decodeImage = function(data, w, h, out)
+{
+	var area = w*h, bpp = UPNG.decode._getBPP(out);
+	var bpl = Math.ceil(w*bpp/8);	// bytes per line
+
+	var bf = new Uint8Array(area*4), bf32 = new Uint32Array(bf.buffer);
+	var ctype = out.ctype, depth = out.depth;
+	var rs = UPNG._bin.readUshort;
+	
+	//console.log(ctype, depth);
+
+	if     (ctype==6) { // RGB + alpha
+		var qarea = area<<2;
+		if(depth== 8) for(var i=0; i<qarea;i++) {  bf[i] = data[i];  /*if((i&3)==3 && data[i]!=0) bf[i]=255;*/ }
+		if(depth==16) for(var i=0; i<qarea;i++) {  bf[i] = data[i<<1];  }
+	}
+	else if(ctype==2) {	// RGB
+		var ts=out.tabs["tRNS"], tr=-1, tg=-1, tb=-1;
+		if(ts) {  tr=ts[0];  tg=ts[1];  tb=ts[2];  }
+		if(depth== 8) for(var i=0; i<area; i++) {  var qi=i<<2, ti=i*3;  bf[qi] = data[ti];  bf[qi+1] = data[ti+1];  bf[qi+2] = data[ti+2];  bf[qi+3] = 255;
+			if(tr!=-1 && data[ti]   ==tr && data[ti+1]   ==tg && data[ti+2]   ==tb) bf[qi+3] = 0;  }
+		if(depth==16) for(var i=0; i<area; i++) {  var qi=i<<2, ti=i*6;  bf[qi] = data[ti];  bf[qi+1] = data[ti+2];  bf[qi+2] = data[ti+4];  bf[qi+3] = 255;
+			if(tr!=-1 && rs(data,ti)==tr && rs(data,ti+2)==tg && rs(data,ti+4)==tb) bf[qi+3] = 0;  }
+	}
+	else if(ctype==3) {	// palette
+		var p=out.tabs["PLTE"], ap=out.tabs["tRNS"], tl=ap?ap.length:0;
+		//console.log(p, ap);
+		if(depth==1) for(var y=0; y<h; y++) {  var s0 = y*bpl, t0 = y*w;
+			for(var i=0; i<w; i++) { var qi=(t0+i)<<2, j=((data[s0+(i>>3)]>>(7-((i&7)<<0)))& 1), cj=3*j;  bf[qi]=p[cj];  bf[qi+1]=p[cj+1];  bf[qi+2]=p[cj+2];  bf[qi+3]=(j<tl)?ap[j]:255;  }
+		}
+		if(depth==2) for(var y=0; y<h; y++) {  var s0 = y*bpl, t0 = y*w;
+			for(var i=0; i<w; i++) { var qi=(t0+i)<<2, j=((data[s0+(i>>2)]>>(6-((i&3)<<1)))& 3), cj=3*j;  bf[qi]=p[cj];  bf[qi+1]=p[cj+1];  bf[qi+2]=p[cj+2];  bf[qi+3]=(j<tl)?ap[j]:255;  }
+		}
+		if(depth==4) for(var y=0; y<h; y++) {  var s0 = y*bpl, t0 = y*w;
+			for(var i=0; i<w; i++) { var qi=(t0+i)<<2, j=((data[s0+(i>>1)]>>(4-((i&1)<<2)))&15), cj=3*j;  bf[qi]=p[cj];  bf[qi+1]=p[cj+1];  bf[qi+2]=p[cj+2];  bf[qi+3]=(j<tl)?ap[j]:255;  }
+		}
+		if(depth==8) for(var i=0; i<area; i++ ) {  var qi=i<<2, j=data[i]                      , cj=3*j;  bf[qi]=p[cj];  bf[qi+1]=p[cj+1];  bf[qi+2]=p[cj+2];  bf[qi+3]=(j<tl)?ap[j]:255;  }
+	}
+	else if(ctype==4) {	// gray + alpha
+		if(depth== 8)  for(var i=0; i<area; i++) {  var qi=i<<2, di=i<<1, gr=data[di];  bf[qi]=gr;  bf[qi+1]=gr;  bf[qi+2]=gr;  bf[qi+3]=data[di+1];  }
+		if(depth==16)  for(var i=0; i<area; i++) {  var qi=i<<2, di=i<<2, gr=data[di];  bf[qi]=gr;  bf[qi+1]=gr;  bf[qi+2]=gr;  bf[qi+3]=data[di+2];  }
+	}
+	else if(ctype==0) {	// gray
+		var tr = out.tabs["tRNS"] ? out.tabs["tRNS"] : -1;
+		if(depth== 1) for(var i=0; i<area; i++) {  var gr=255*((data[i>>3]>>(7 -((i&7)   )))& 1), al=(gr==tr*255)?0:255;  bf32[i]=(al<<24)|(gr<<16)|(gr<<8)|gr;  }
+		if(depth== 2) for(var i=0; i<area; i++) {  var gr= 85*((data[i>>2]>>(6 -((i&3)<<1)))& 3), al=(gr==tr* 85)?0:255;  bf32[i]=(al<<24)|(gr<<16)|(gr<<8)|gr;  }
+		if(depth== 4) for(var i=0; i<area; i++) {  var gr= 17*((data[i>>1]>>(4 -((i&1)<<2)))&15), al=(gr==tr* 17)?0:255;  bf32[i]=(al<<24)|(gr<<16)|(gr<<8)|gr;  }
+		if(depth== 8) for(var i=0; i<area; i++) {  var gr=data[i  ] , al=(gr           ==tr)?0:255;  bf32[i]=(al<<24)|(gr<<16)|(gr<<8)|gr;  }
+		if(depth==16) for(var i=0; i<area; i++) {  var gr=data[i<<1], al=(rs(data,i<<1)==tr)?0:255;  bf32[i]=(al<<24)|(gr<<16)|(gr<<8)|gr;  }
+	}
+	return bf;
+}
+
+
+
+UPNG.decode = function(buff)
+{
+	var data = new Uint8Array(buff), offset = 8, bin = UPNG._bin, rUs = bin.readUshort, rUi = bin.readUint;
+	var out = {tabs:{}, frames:[]};
+	var dd = new Uint8Array(data.length), doff = 0;	 // put all IDAT data into it
+	var fd, foff = 0;	// frames
+	
+	var mgck = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+	for(var i=0; i<8; i++) if(data[i]!=mgck[i]) throw "The input is not a PNG file!";
+
+	while(offset<data.length)
+	{
+		var len  = bin.readUint(data, offset);  offset += 4;
+		var type = bin.readASCII(data, offset, 4);  offset += 4;
+		//log(type,len);
+		
+		if     (type=="IHDR")  {  UPNG.decode._IHDR(data, offset, out);  }
+		else if(type=="IDAT") {
+			for(var i=0; i<len; i++) dd[doff+i] = data[offset+i];
+			doff += len;
+		}
+		else if(type=="acTL")  {
+			out.tabs[type] = {  num_frames:rUi(data, offset), num_plays:rUi(data, offset+4)  };
+			fd = new Uint8Array(data.length);
+		}
+		else if(type=="fcTL")  {
+			if(foff!=0) {  var fr = out.frames[out.frames.length-1];
+				fr.data = UPNG.decode._decompress(out, fd.slice(0,foff), fr.rect.width, fr.rect.height);  foff=0;
+			}
+			var rct = {x:rUi(data, offset+12),y:rUi(data, offset+16),width:rUi(data, offset+4),height:rUi(data, offset+8)};
+			var del = rUs(data, offset+22);  del = rUs(data, offset+20) / (del==0?100:del);
+			var frm = {rect:rct, delay:Math.round(del*1000), dispose:data[offset+24], blend:data[offset+25]};
+			//console.log(frm);
+			out.frames.push(frm);
+		}
+		else if(type=="fdAT") {
+			for(var i=0; i<len-4; i++) fd[foff+i] = data[offset+i+4];
+			foff += len-4;
+		}
+		else if(type=="pHYs") {
+			out.tabs[type] = [bin.readUint(data, offset), bin.readUint(data, offset+4), data[offset+8]];
+		}
+		else if(type=="cHRM") {
+			out.tabs[type] = [];
+			for(var i=0; i<8; i++) out.tabs[type].push(bin.readUint(data, offset+i*4));
+		}
+		else if(type=="tEXt") {
+			if(out.tabs[type]==null) out.tabs[type] = {};
+			var nz = bin.nextZero(data, offset);
+			var keyw = bin.readASCII(data, offset, nz-offset);
+			var text = bin.readASCII(data, nz+1, offset+len-nz-1);
+			out.tabs[type][keyw] = text;
+		}
+		else if(type=="iTXt") {
+			if(out.tabs[type]==null) out.tabs[type] = {};
+			var nz = 0, off = offset;
+			nz = bin.nextZero(data, off);
+			var keyw = bin.readASCII(data, off, nz-off);  off = nz + 1;
+			var cflag = data[off], cmeth = data[off+1];  off+=2;
+			nz = bin.nextZero(data, off);
+			var ltag = bin.readASCII(data, off, nz-off);  off = nz + 1;
+			nz = bin.nextZero(data, off);
+			var tkeyw = bin.readUTF8(data, off, nz-off);  off = nz + 1;
+			var text  = bin.readUTF8(data, off, len-(off-offset));
+			out.tabs[type][keyw] = text;
+		}
+		else if(type=="PLTE") {
+			out.tabs[type] = bin.readBytes(data, offset, len);
+		}
+		else if(type=="hIST") {
+			var pl = out.tabs["PLTE"].length/3;
+			out.tabs[type] = [];  for(var i=0; i<pl; i++) out.tabs[type].push(rUs(data, offset+i*2));
+		}
+		else if(type=="tRNS") {
+			if     (out.ctype==3) out.tabs[type] = bin.readBytes(data, offset, len);
+			else if(out.ctype==0) out.tabs[type] = rUs(data, offset);
+			else if(out.ctype==2) out.tabs[type] = [ rUs(data,offset),rUs(data,offset+2),rUs(data,offset+4) ];
+			//else console.log("tRNS for unsupported color type",out.ctype, len);
+		}
+		else if(type=="gAMA") out.tabs[type] = bin.readUint(data, offset)/100000;
+		else if(type=="sRGB") out.tabs[type] = data[offset];
+		else if(type=="bKGD")
+		{
+			if     (out.ctype==0 || out.ctype==4) out.tabs[type] = [rUs(data, offset)];
+			else if(out.ctype==2 || out.ctype==6) out.tabs[type] = [rUs(data, offset), rUs(data, offset+2), rUs(data, offset+4)];
+			else if(out.ctype==3) out.tabs[type] = data[offset];
+		}
+		else if(type=="IEND") {
+			if(foff!=0) {  var fr = out.frames[out.frames.length-1];
+				fr.data = UPNG.decode._decompress(out, fd.slice(0,foff), fr.rect.width, fr.rect.height);  foff=0;
+			}	
+			out.data = UPNG.decode._decompress(out, dd, out.width, out.height);  break;
+		}
+		//else {  log("unknown chunk type", type, len);  }
+		offset += len;
+		var crc = bin.readUint(data, offset);  offset += 4;
+	}
+	delete out.compress;  delete out.interlace;  delete out.filter;
+	return out;
+}
+
+UPNG.decode._decompress = function(out, dd, w, h) {
+	if(out.compress ==0) dd = UPNG.decode._inflate(dd);
+
+	if     (out.interlace==0) dd = UPNG.decode._filterZero(dd, out, 0, w, h);
+	else if(out.interlace==1) dd = UPNG.decode._readInterlace(dd, out);
+	return dd;
+}
+
+UPNG.decode._inflate = function(data) {  return pako["inflate"](data);  }
+
+UPNG.decode._readInterlace = function(data, out)
+{
+	var w = out.width, h = out.height;
+	var bpp = UPNG.decode._getBPP(out), cbpp = bpp>>3, bpl = Math.ceil(w*bpp/8);
+	var img = new Uint8Array( h * bpl );
+	var di = 0;
+
+	var starting_row  = [ 0, 0, 4, 0, 2, 0, 1 ];
+	var starting_col  = [ 0, 4, 0, 2, 0, 1, 0 ];
+	var row_increment = [ 8, 8, 8, 4, 4, 2, 2 ];
+	var col_increment = [ 8, 8, 4, 4, 2, 2, 1 ];
+
+	var pass=0;
+	while(pass<7)
+	{
+		var ri = row_increment[pass], ci = col_increment[pass];
+		var sw = 0, sh = 0;
+		var cr = starting_row[pass];  while(cr<h) {  cr+=ri;  sh++;  }
+		var cc = starting_col[pass];  while(cc<w) {  cc+=ci;  sw++;  }
+		var bpll = Math.ceil(sw*bpp/8);
+		UPNG.decode._filterZero(data, out, di, sw, sh);
+
+		var y=0, row = starting_row[pass];
+		while(row<h)
+		{
+			var col = starting_col[pass];
+			var cdi = (di+y*bpll)<<3;
+
+			while(col<w)
+			{
+				if(bpp==1) {
+					var val = data[cdi>>3];  val = (val>>(7-(cdi&7)))&1;
+					img[row*bpl + (col>>3)] |= (val << (7-((col&3)<<0)));
+				}
+				if(bpp==2) {
+					var val = data[cdi>>3];  val = (val>>(6-(cdi&7)))&3;
+					img[row*bpl + (col>>2)] |= (val << (6-((col&3)<<1)));
+				}
+				if(bpp==4) {
+					var val = data[cdi>>3];  val = (val>>(4-(cdi&7)))&15;
+					img[row*bpl + (col>>1)] |= (val << (4-((col&1)<<2)));
+				}
+				if(bpp>=8) {
+					var ii = row*bpl+col*cbpp;
+					for(var j=0; j<cbpp; j++) img[ii+j] = data[(cdi>>3)+j];
+				}
+				cdi+=bpp;  col+=ci;
+			}
+			y++;  row += ri;
+		}
+		if(sw*sh!=0) di += sh * (1 + bpll);
+		pass = pass + 1;
+	}
+	return img;
+}
+
+UPNG.decode._getBPP = function(out) {
+	var noc = [1,null,3,1,2,null,4][out.ctype];
+	return noc * out.depth;
+}
+
+UPNG.decode._filterZero = function(data, out, off, w, h)
+{
+	var bpp = UPNG.decode._getBPP(out), bpl = Math.ceil(w*bpp/8), paeth = UPNG.decode._paeth;
+	bpp = Math.ceil(bpp/8);
+
+	for(var y=0; y<h; y++)  {
+		var i = off+y*bpl, di = i+y+1;
+		var type = data[di-1];
+
+		if     (type==0) for(var x=  0; x<bpl; x++) data[i+x] = data[di+x];
+		else if(type==1) {
+			for(var x=  0; x<bpp; x++) data[i+x] = data[di+x];
+			for(var x=bpp; x<bpl; x++) data[i+x] = (data[di+x] + data[i+x-bpp])&255;
+		}
+		else if(y==0) {
+			for(var x=  0; x<bpp; x++) data[i+x] = data[di+x];
+			if(type==2) for(var x=bpp; x<bpl; x++) data[i+x] = (data[di+x])&255;
+			if(type==3) for(var x=bpp; x<bpl; x++) data[i+x] = (data[di+x] + (data[i+x-bpp]>>1) )&255;
+			if(type==4) for(var x=bpp; x<bpl; x++) data[i+x] = (data[di+x] + paeth(data[i+x-bpp], 0, 0) )&255;
+		}
+		else {
+			if(type==2) { for(var x=  0; x<bpl; x++) data[i+x] = (data[di+x] + data[i+x-bpl])&255;  }
+
+			if(type==3) { for(var x=  0; x<bpp; x++) data[i+x] = (data[di+x] + (data[i+x-bpl]>>1))&255;
+			              for(var x=bpp; x<bpl; x++) data[i+x] = (data[di+x] + ((data[i+x-bpl]+data[i+x-bpp])>>1) )&255;  }
+
+			if(type==4) { for(var x=  0; x<bpp; x++) data[i+x] = (data[di+x] + paeth(0, data[i+x-bpl], 0))&255;
+						  for(var x=bpp; x<bpl; x++) data[i+x] = (data[di+x] + paeth(data[i+x-bpp], data[i+x-bpl], data[i+x-bpp-bpl]) )&255;  }
+		}
+	}
+	return data;
+}
+
+UPNG.decode._paeth = function(a,b,c)
+{
+	var p = a+b-c, pa = Math.abs(p-a), pb = Math.abs(p-b), pc = Math.abs(p-c);
+	if (pa <= pb && pa <= pc)  return a;
+	else if (pb <= pc)  return b;
+	return c;
+}
+
+UPNG.decode._IHDR = function(data, offset, out)
+{
+	var bin = UPNG._bin;
+	out.width  = bin.readUint(data, offset);  offset += 4;
+	out.height = bin.readUint(data, offset);  offset += 4;
+	out.depth     = data[offset];  offset++;
+	out.ctype     = data[offset];  offset++;
+	out.compress  = data[offset];  offset++;
+	out.filter    = data[offset];  offset++;
+	out.interlace = data[offset];  offset++;
+}
+
+UPNG._bin = {
+	nextZero   : function(data,p)  {  while(data[p]!=0) p++;  return p;  },
+	readUshort : function(buff,p)  {  return (buff[p]<< 8) | buff[p+1];  },
+	writeUshort: function(buff,p,n){  buff[p] = (n>>8)&255;  buff[p+1] = n&255;  },
+	readUint   : function(buff,p)  {  return (buff[p]*(256*256*256)) + ((buff[p+1]<<16) | (buff[p+2]<< 8) | buff[p+3]);  },
+	writeUint  : function(buff,p,n){  buff[p]=(n>>24)&255;  buff[p+1]=(n>>16)&255;  buff[p+2]=(n>>8)&255;  buff[p+3]=n&255;  },
+	readASCII  : function(buff,p,l){  var s = "";  for(var i=0; i<l; i++) s += String.fromCharCode(buff[p+i]);  return s;    },
+	writeASCII : function(data,p,s){  for(var i=0; i<s.length; i++) data[p+i] = s.charCodeAt(i);  },
+	readBytes  : function(buff,p,l){  var arr = [];   for(var i=0; i<l; i++) arr.push(buff[p+i]);   return arr;  },
+	pad : function(n) { return n.length < 2 ? "0" + n : n; },
+	readUTF8 : function(buff, p, l) {
+		var s = "", ns;
+		for(var i=0; i<l; i++) s += "%" + UPNG._bin.pad(buff[p+i].toString(16));
+		try {  ns = decodeURIComponent(s); }
+		catch(e) {  return UPNG._bin.readASCII(buff, p, l);  }
+		return  ns;
+	}
+}
+UPNG._copyTile = function(sb, sw, sh, tb, tw, th, xoff, yoff, mode)
+{
+	var w = Math.min(sw,tw), h = Math.min(sh,th);
+	var si=0, ti=0;
+	for(var y=0; y<h; y++)
+		for(var x=0; x<w; x++)
+		{
+			if(xoff>=0 && yoff>=0) {  si = (y*sw+x)<<2;  ti = (( yoff+y)*tw+xoff+x)<<2;  }
+			else                   {  si = ((-yoff+y)*sw-xoff+x)<<2;  ti = (y*tw+x)<<2;  }
+			
+			if     (mode==0) {  tb[ti] = sb[si];  tb[ti+1] = sb[si+1];  tb[ti+2] = sb[si+2];  tb[ti+3] = sb[si+3];  }
+			else if(mode==1) {
+				var fa = sb[si+3]*(1/255), fr=sb[si]*fa, fg=sb[si+1]*fa, fb=sb[si+2]*fa; 
+				var ba = tb[ti+3]*(1/255), br=tb[ti]*ba, bg=tb[ti+1]*ba, bb=tb[ti+2]*ba; 
+				
+				var ifa=1-fa, oa = fa+ba*ifa, ioa = (oa==0?0:1/oa);
+				tb[ti+3] = 255*oa;  
+				tb[ti+0] = (fr+br*ifa)*ioa;  
+				tb[ti+1] = (fg+bg*ifa)*ioa;   
+				tb[ti+2] = (fb+bb*ifa)*ioa;  
+			}
+			else if(mode==2){	// copy only differences, otherwise zero
+				var fa = sb[si+3], fr=sb[si], fg=sb[si+1], fb=sb[si+2]; 
+				var ba = tb[ti+3], br=tb[ti], bg=tb[ti+1], bb=tb[ti+2]; 
+				if(fa==ba && fr==br && fg==bg && fb==bb) {  tb[ti]=0;  tb[ti+1]=0;  tb[ti+2]=0;  tb[ti+3]=0;  }
+				else {  tb[ti]=fr;  tb[ti+1]=fg;  tb[ti+2]=fb;  tb[ti+3]=fa;  }
+			}
+			else if(mode==3){	// check if can be blended
+				var fa = sb[si+3], fr=sb[si], fg=sb[si+1], fb=sb[si+2]; 
+				var ba = tb[ti+3], br=tb[ti], bg=tb[ti+1], bb=tb[ti+2]; 
+				if(fa==ba && fr==br && fg==bg && fb==bb) continue;
+				//if(fa!=255 && ba!=0) return false;
+				if(fa<220 && ba>20) return false;
+			}
+		}
+	return true;
+}
+
+
+
+UPNG.encode = function(bufs, w, h, ps, dels, forbidPlte)
+{
+	if(ps==null) ps=0;
+	if(forbidPlte==null) forbidPlte = false;
+	var data = new Uint8Array(bufs[0].byteLength*bufs.length+100);
+	var wr=[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+	for(var i=0; i<8; i++) data[i]=wr[i];
+	var offset = 8,  bin = UPNG._bin, crc = UPNG.crc.crc, wUi = bin.writeUint, wUs = bin.writeUshort, wAs = bin.writeASCII;
+
+	var nimg = UPNG.encode.compressPNG(bufs, w, h, ps, forbidPlte);
+
+	wUi(data,offset, 13);     offset+=4;
+	wAs(data,offset,"IHDR");  offset+=4;
+	wUi(data,offset,w);  offset+=4;
+	wUi(data,offset,h);  offset+=4;
+	data[offset] = nimg.depth;  offset++;  // depth
+	data[offset] = nimg.ctype;  offset++;  // ctype
+	data[offset] = 0;  offset++;  // compress
+	data[offset] = 0;  offset++;  // filter
+	data[offset] = 0;  offset++;  // interlace
+	wUi(data,offset,crc(data,offset-17,17));  offset+=4; // crc
+
+	// 9 bytes to say, that it is sRGB
+	wUi(data,offset, 1);      offset+=4;
+	wAs(data,offset,"sRGB");  offset+=4;
+	data[offset] = 1;  offset++;
+	wUi(data,offset,crc(data,offset-5,5));  offset+=4; // crc
+
+	var anim = bufs.length>1;
+	if(anim) {
+		wUi(data,offset, 8);      offset+=4;
+		wAs(data,offset,"acTL");  offset+=4;
+		wUi(data,offset, bufs.length);      offset+=4;
+		wUi(data,offset, 0);      offset+=4;
+		wUi(data,offset,crc(data,offset-12,12));  offset+=4; // crc
+	}
+
+	if(nimg.ctype==3) {
+		var dl = nimg.plte.length;
+		wUi(data,offset, dl*3);  offset+=4;
+		wAs(data,offset,"PLTE");  offset+=4;
+		for(var i=0; i<dl; i++){
+			var ti=i*3, c=nimg.plte[i], r=(c)&255, g=(c>>8)&255, b=(c>>16)&255;
+			data[offset+ti+0]=r;  data[offset+ti+1]=g;  data[offset+ti+2]=b;
+		}
+		offset+=dl*3;
+		wUi(data,offset,crc(data,offset-dl*3-4,dl*3+4));  offset+=4; // crc
+
+		if(nimg.gotAlpha) {
+			wUi(data,offset, dl);  offset+=4;
+			wAs(data,offset,"tRNS");  offset+=4;
+			for(var i=0; i<dl; i++)  data[offset+i]=(nimg.plte[i]>>24)&255;
+			offset+=dl;
+			wUi(data,offset,crc(data,offset-dl-4,dl+4));  offset+=4; // crc
+		}
+	}
+	
+	var fi = 0;
+	for(var j=0; j<nimg.frames.length; j++)
+	{
+		var fr = nimg.frames[j];
+		if(anim) {
+			wUi(data,offset, 26);     offset+=4;
+			wAs(data,offset,"fcTL");  offset+=4;
+			wUi(data, offset, fi++);   offset+=4;
+			wUi(data, offset, fr.rect.width );   offset+=4;
+			wUi(data, offset, fr.rect.height);   offset+=4;
+			wUi(data, offset, fr.rect.x);   offset+=4;
+			wUi(data, offset, fr.rect.y);   offset+=4;
+			wUs(data, offset, dels[j]);   offset+=2;
+			wUs(data, offset,  1000);   offset+=2;
+			data[offset] = fr.dispose;  offset++;	// dispose
+			data[offset] = fr.blend  ;  offset++;	// blend
+			wUi(data,offset,crc(data,offset-30,30));  offset+=4; // crc
+		}
+				
+		var imgd = fr.cimg, dl = imgd.length;
+		wUi(data,offset, dl+(j==0?0:4));     offset+=4;
+		var ioff = offset;
+		wAs(data,offset,(j==0)?"IDAT":"fdAT");  offset+=4;
+		if(j!=0) {  wUi(data, offset, fi++);  offset+=4;  }
+		for(var i=0; i<dl; i++) data[offset+i] = imgd[i];
+		offset += dl;
+		wUi(data,offset,crc(data,ioff,offset-ioff));  offset+=4; // crc
+	}
+
+	wUi(data,offset, 0);     offset+=4;
+	wAs(data,offset,"IEND");  offset+=4;
+	wUi(data,offset,crc(data,offset-4,4));  offset+=4; // crc
+
+	return data.buffer.slice(0,offset);
+}
+
+UPNG.encode.compressPNG = function(bufs, w, h, ps, forbidPlte)
+{
+	var out = UPNG.encode.compress(bufs, w, h, ps, false, forbidPlte);
+	for(var i=0; i<bufs.length; i++) {
+		var frm = out.frames[i], nw=frm.rect.width, nh=frm.rect.height, bpl=frm.bpl, bpp=frm.bpp;
+		var fdata = new Uint8Array(nh*bpl+nh);
+		frm.cimg = UPNG.encode._filterZero(frm.img,nh,bpp,bpl,fdata);
+	}	
+	return out;
+}
+
+UPNG.encode.compress = function(bufs, w, h, ps, forGIF, forbidPlte)
+{
+	if(forbidPlte==null) forbidPlte = false;
+	
+	var ctype = 6, depth = 8, bpp = 4, alphaAnd=255
+	
+	for(var j=0; j<bufs.length; j++)  {  // when not quantized, other frames can contain colors, that are not in an initial frame
+		var img = new Uint8Array(bufs[j]), ilen = img.length;
+		for(var i=0; i<ilen; i+=4) alphaAnd &= img[i+3];
+	}
+	var gotAlpha = (alphaAnd)!=255;
+	
+	var cmap={}, plte=[];  if(bufs.length!=0) {  cmap[0]=0;  plte.push(0);  if(ps!=0) ps--;  } 
+	
+	
+	if(ps!=0) {
+		var qres = UPNG.quantize(bufs, ps, forGIF);  bufs = qres.bufs;
+		for(var i=0; i<qres.plte.length; i++) {  var c=qres.plte[i].est.rgba;  if(cmap[c]==null) {  cmap[c]=plte.length;  plte.push(c);  }     }
+	}
+	else {
+		// what if ps==0, but there are <=256 colors?  we still need to detect, if the palette could be used
+		for(var j=0; j<bufs.length; j++)  {  // when not quantized, other frames can contain colors, that are not in an initial frame
+			var img32 = new Uint32Array(bufs[j]), ilen = img32.length;
+			for(var i=0; i<ilen; i++) {
+				var c = img32[i];
+				if((i<w || (c!=img32[i-1] && c!=img32[i-w])) && cmap[c]==null) {  cmap[c]=plte.length;  plte.push(c);  if(plte.length>=300) break;  }
+			}
+		}
+	}
+	
+	var brute = gotAlpha ? forGIF : false;		// brute : frames can only be copied, not "blended"
+	var cc=plte.length;  //console.log(cc);
+	if(cc<=256 && forbidPlte==false) {
+		if(cc<= 2) depth=1;  else if(cc<= 4) depth=2;  else if(cc<=16) depth=4;  else depth=8;
+		if(forGIF) depth=8;
+		gotAlpha = true;
+	}
+	
+	
+	var frms = [];
+	for(var j=0; j<bufs.length; j++)
+	{
+		var cimg = new Uint8Array(bufs[j]), cimg32 = new Uint32Array(cimg.buffer);
+		
+		var nx=0, ny=0, nw=w, nh=h, blend=0;
+		if(j!=0 && !brute) {
+			var tlim = (forGIF || j==1 || frms[frms.length-2].dispose==2)?1:2, tstp = 0, tarea = 1e9;
+			for(var it=0; it<tlim; it++)
+			{
+				var pimg = new Uint8Array(bufs[j-1-it]), p32 = new Uint32Array(bufs[j-1-it]);
+				var mix=w,miy=h,max=-1,may=-1;
+				for(var y=0; y<h; y++) for(var x=0; x<w; x++) {
+					var i = y*w+x;
+					if(cimg32[i]!=p32[i]) {
+						if(x<mix) mix=x;  if(x>max) max=x;
+						if(y<miy) miy=y;  if(y>may) may=y;
+					}
+				}
+				var sarea = (max==-1) ? 1 : (max-mix+1)*(may-miy+1);
+				if(sarea<tarea) {
+					tarea = sarea;  tstp = it;  
+					if(max==-1) {  nx=ny=0;  nw=nh=1;  }
+					else {  nx = mix; ny = miy; nw = max-mix+1; nh = may-miy+1;  }
+				}
+			}
+			
+			var pimg = new Uint8Array(bufs[j-1-tstp]);
+			if(tstp==1) frms[frms.length-1].dispose = 2;
+			
+			var nimg = new Uint8Array(nw*nh*4), nimg32 = new Uint32Array(nimg.buffer);
+			UPNG.   _copyTile(pimg,w,h, nimg,nw,nh, -nx,-ny, 0);
+			/* 半透明のコマを blend=OVER で書くと、透明な下地の上に重ねたときの
+			   結果が読み込み側の実装で割れる（実測：Pillowはα43を43×43/255として読み、
+			   仕様どおりのUPNGやブラウザは43のまま読む）。
+			   フェードはまさに「透明の次に半透明のコマ」を作るので、
+			   差分の矩形は活かしたまま、常に SOURCE（置き換え）で書いて解釈の余地をなくす。 */
+			UPNG._copyTile(cimg,w,h, nimg,nw,nh, -nx,-ny, 0);  blend = 0;
+			cimg = nimg;  cimg32 = new Uint32Array(cimg.buffer);
+		}
+		var bpl = 4*nw;
+		if(cc<=256 && forbidPlte==false) {
+			bpl = Math.ceil(depth*nw/8);
+			var nimg = new Uint8Array(bpl*nh);
+			for(var y=0; y<nh; y++) {  var i=y*bpl, ii=y*nw;
+				if     (depth==8) for(var x=0; x<nw; x++) nimg[i+(x)   ]   =  (cmap[cimg32[ii+x]]             );
+				else if(depth==4) for(var x=0; x<nw; x++) nimg[i+(x>>1)]  |=  (cmap[cimg32[ii+x]]<<(4-(x&1)*4));
+				else if(depth==2) for(var x=0; x<nw; x++) nimg[i+(x>>2)]  |=  (cmap[cimg32[ii+x]]<<(6-(x&3)*2));
+				else if(depth==1) for(var x=0; x<nw; x++) nimg[i+(x>>3)]  |=  (cmap[cimg32[ii+x]]<<(7-(x&7)*1));
+			}
+			cimg=nimg;  ctype=3;  bpp=1;
+		}
+		else if(gotAlpha==false && bufs.length==1) {	// some next "reduced" frames may contain alpha for blending
+			var nimg = new Uint8Array(nw*nh*3), area=nw*nh;
+			for(var i=0; i<area; i++) { var ti=i*3, qi=i*4;  nimg[ti]=cimg[qi];  nimg[ti+1]=cimg[qi+1];  nimg[ti+2]=cimg[qi+2];  }
+			cimg=nimg;  ctype=2;  bpp=3;  bpl=3*nw;
+		}
+		frms.push({rect:{x:nx,y:ny,width:nw,height:nh}, img:cimg, bpl:bpl, bpp:bpp, blend:blend, dispose:brute?1:0});
+	}
+	return {ctype:ctype, depth:depth, plte:plte, gotAlpha:gotAlpha, frames:frms  };
+}
+
+UPNG.encode._filterZero = function(img,h,bpp,bpl,data)
+{
+	var fls = [];
+	for(var t=0; t<5; t++) {  if(h*bpl>500000 && (t==2 || t==3 || t==4)) continue;
+		for(var y=0; y<h; y++) UPNG.encode._filterLine(data, img, y, bpl, bpp, t);
+		fls.push(pako["deflate"](data));  if(bpp==1) break;
+	}
+	var ti, tsize=1e9;
+	for(var i=0; i<fls.length; i++) if(fls[i].length<tsize) {  ti=i;  tsize=fls[i].length;  }
+	return fls[ti];
+}
+UPNG.encode._filterLine = function(data, img, y, bpl, bpp, type)
+{
+	var i = y*bpl, di = i+y, paeth = UPNG.decode._paeth
+	data[di]=type;  di++;
+
+	if(type==0) for(var x=0; x<bpl; x++) data[di+x] = img[i+x];
+	else if(type==1) {
+		for(var x=  0; x<bpp; x++) data[di+x] =  img[i+x];
+		for(var x=bpp; x<bpl; x++) data[di+x] = (img[i+x]-img[i+x-bpp]+256)&255;
+	}
+	else if(y==0) {
+		for(var x=  0; x<bpp; x++) data[di+x] = img[i+x];
+
+		if(type==2) for(var x=bpp; x<bpl; x++) data[di+x] = img[i+x];
+		if(type==3) for(var x=bpp; x<bpl; x++) data[di+x] = (img[i+x] - (img[i+x-bpp]>>1) +256)&255;
+		if(type==4) for(var x=bpp; x<bpl; x++) data[di+x] = (img[i+x] - paeth(img[i+x-bpp], 0, 0) +256)&255;
+	}
+	else {
+		if(type==2) { for(var x=  0; x<bpl; x++) data[di+x] = (img[i+x]+256 - img[i+x-bpl])&255;  }
+		if(type==3) { for(var x=  0; x<bpp; x++) data[di+x] = (img[i+x]+256 - (img[i+x-bpl]>>1))&255;
+					  for(var x=bpp; x<bpl; x++) data[di+x] = (img[i+x]+256 - ((img[i+x-bpl]+img[i+x-bpp])>>1))&255;  }
+		if(type==4) { for(var x=  0; x<bpp; x++) data[di+x] = (img[i+x]+256 - paeth(0, img[i+x-bpl], 0))&255;
+					  for(var x=bpp; x<bpl; x++) data[di+x] = (img[i+x]+256 - paeth(img[i+x-bpp], img[i+x-bpl], img[i+x-bpp-bpl]))&255;  }
+	}
+}
+
+UPNG.crc = {
+	table : ( function() {
+	   var tab = new Uint32Array(256);
+	   for (var n=0; n<256; n++) {
+			var c = n;
+			for (var k=0; k<8; k++) {
+				if (c & 1)  c = 0xedb88320 ^ (c >>> 1);
+				else        c = c >>> 1;
+			}
+			tab[n] = c;  }
+		return tab;  })(),
+	update : function(c, buf, off, len) {
+		for (var i=0; i<len; i++)  c = UPNG.crc.table[(c ^ buf[off+i]) & 0xff] ^ (c >>> 8);
+		return c;
+	},
+	crc : function(b,o,l)  {  return UPNG.crc.update(0xffffffff,b,o,l) ^ 0xffffffff;  }
+}
+
+
+UPNG.quantize = function(bufs, ps, roundAlpha)
+{	
+	var imgs = [], totl = 0;
+	for(var i=0; i<bufs.length; i++) {  imgs.push(UPNG.encode.alphaMul(new Uint8Array(bufs[i]), roundAlpha));  totl+=bufs[i].byteLength;  }
+	
+	var nimg = new Uint8Array(totl), nimg32 = new Uint32Array(nimg.buffer), noff=0;
+	for(var i=0; i<imgs.length; i++) {
+		var img = imgs[i], il = img.length;
+		for(var j=0; j<il; j++) nimg[noff+j] = img[j];
+		noff += il;
+	}
+	
+	var root = {i0:0, i1:nimg.length, bst:null, est:null, tdst:0, left:null, right:null };  // basic statistic, extra statistic
+	root.bst = UPNG.quantize.stats(  nimg,root.i0, root.i1  );  root.est = UPNG.quantize.estats( root.bst );
+	var leafs = [root];
+	
+	while(leafs.length<ps)
+	{
+		var maxL = 0, mi=0;
+		for(var i=0; i<leafs.length; i++) if(leafs[i].est.L > maxL) {  maxL=leafs[i].est.L;  mi=i;  }
+		if(maxL<1e-3) break;
+		var node = leafs[mi];
+		
+		var s0 = UPNG.quantize.splitPixels(nimg,nimg32, node.i0, node.i1, node.est.e, node.est.eMq255);
+		
+		var ln = {i0:node.i0, i1:s0, bst:null, est:null, tdst:0, left:null, right:null };  ln.bst = UPNG.quantize.stats( nimg, ln.i0, ln.i1 );  
+		ln.est = UPNG.quantize.estats( ln.bst );
+		var rn = {i0:s0, i1:node.i1, bst:null, est:null, tdst:0, left:null, right:null };  rn.bst = {R:[], m:[], N:node.bst.N-ln.bst.N};
+		for(var i=0; i<16; i++) rn.bst.R[i] = node.bst.R[i]-ln.bst.R[i];
+		for(var i=0; i< 4; i++) rn.bst.m[i] = node.bst.m[i]-ln.bst.m[i];
+		rn.est = UPNG.quantize.estats( rn.bst );
+		
+		node.left = ln;  node.right = rn;
+		leafs[mi]=ln;  leafs.push(rn);
+	}
+	leafs.sort(function(a,b) {  return b.bst.N-a.bst.N;  });
+	
+	for(var ii=0; ii<imgs.length; ii++) {
+		var planeDst = UPNG.quantize.planeDst;
+		var sb = new Uint8Array(imgs[ii].buffer), tb = new Uint32Array(imgs[ii].buffer), len = sb.length;
+		
+		var stack = [], si=0;
+		for(var i=0; i<len; i+=4) {
+			var r=sb[i]*(1/255), g=sb[i+1]*(1/255), b=sb[i+2]*(1/255), a=sb[i+3]*(1/255);
+			
+			//  exact, but too slow :(
+			//var nd = UPNG.quantize.getNearest(root, r, g, b, a);
+			var nd = root;
+			while(nd.left) nd = (planeDst(nd.est,r,g,b,a)<=0) ? nd.left : nd.right;
+			
+			tb[i>>2] = nd.est.rgba;
+		}
+		imgs[ii]=tb.buffer;
+	}
+	return {  bufs:imgs, plte:leafs  };
+}
+UPNG.quantize.getNearest = function(nd, r,g,b,a)
+{
+	if(nd.left==null) {  nd.tdst = UPNG.quantize.dist(nd.est.q,r,g,b,a);  return nd;  }
+	var planeDst = UPNG.quantize.planeDst(nd.est,r,g,b,a);
+	
+	var node0 = nd.left, node1 = nd.right;
+	if(planeDst>0) {  node0=nd.right;  node1=nd.left;  }
+	
+	var ln = UPNG.quantize.getNearest(node0, r,g,b,a);
+	if(ln.tdst<=planeDst*planeDst) return ln;
+	var rn = UPNG.quantize.getNearest(node1, r,g,b,a);
+	return rn.tdst<ln.tdst ? rn : ln;
+}
+UPNG.quantize.planeDst = function(est, r,g,b,a) {  var e = est.e;  return e[0]*r + e[1]*g + e[2]*b + e[3]*a - est.eMq;  }
+UPNG.quantize.dist     = function(q,   r,g,b,a) {  var d0=r-q[0], d1=g-q[1], d2=b-q[2], d3=a-q[3];  return d0*d0+d1*d1+d2*d2+d3*d3;  }
+
+UPNG.quantize.splitPixels = function(nimg, nimg32, i0, i1, e, eMq)
+{
+	var vecDot = UPNG.quantize.vecDot;
+	i1-=4;
+	var shfs = 0;
+	while(i0<i1)
+	{
+		while(vecDot(nimg, i0, e)<=eMq) i0+=4;
+		while(vecDot(nimg, i1, e)> eMq) i1-=4;
+		if(i0>=i1) break;
+		
+		var t = nimg32[i0>>2];  nimg32[i0>>2] = nimg32[i1>>2];  nimg32[i1>>2]=t;
+		
+		i0+=4;  i1-=4;
+	}
+	while(vecDot(nimg, i0, e)>eMq) i0-=4;
+	return i0+4;
+}
+UPNG.quantize.vecDot = function(nimg, i, e)
+{
+	return nimg[i]*e[0] + nimg[i+1]*e[1] + nimg[i+2]*e[2] + nimg[i+3]*e[3];
+}
+UPNG.quantize.stats = function(nimg, i0, i1){
+	var R = [0,0,0,0,  0,0,0,0,  0,0,0,0,  0,0,0,0];
+	var m = [0,0,0,0];
+	var N = (i1-i0)>>2;
+	for(var i=i0; i<i1; i+=4)
+	{
+		var r = nimg[i]*(1/255), g = nimg[i+1]*(1/255), b = nimg[i+2]*(1/255), a = nimg[i+3]*(1/255);
+		//var r = nimg[i], g = nimg[i+1], b = nimg[i+2], a = nimg[i+3];
+		m[0]+=r;  m[1]+=g;  m[2]+=b;  m[3]+=a;
+		
+		R[ 0] += r*r;  R[ 1] += r*g;  R[ 2] += r*b;  R[ 3] += r*a;  
+		               R[ 5] += g*g;  R[ 6] += g*b;  R[ 7] += g*a; 
+		                              R[10] += b*b;  R[11] += b*a;  
+		                                             R[15] += a*a;  
+	}
+	R[4]=R[1];  R[8]=R[2];  R[12]=R[3];  R[9]=R[6];  R[13]=R[7];  R[14]=R[11];
+	
+	return {R:R, m:m, N:N};
+}
+UPNG.quantize.estats = function(stats){
+	var R = stats.R, m = stats.m, N = stats.N;
+	
+	var m0 = m[0], m1 = m[1], m2 = m[2], m3 = m[3], iN = (N==0 ? 0 : 1/N);
+	var Rj = [
+		R[ 0] - m0*m0*iN,  R[ 1] - m0*m1*iN,  R[ 2] - m0*m2*iN,  R[ 3] - m0*m3*iN,  
+		R[ 4] - m1*m0*iN,  R[ 5] - m1*m1*iN,  R[ 6] - m1*m2*iN,  R[ 7] - m1*m3*iN,
+		R[ 8] - m2*m0*iN,  R[ 9] - m2*m1*iN,  R[10] - m2*m2*iN,  R[11] - m2*m3*iN,  
+		R[12] - m3*m0*iN,  R[13] - m3*m1*iN,  R[14] - m3*m2*iN,  R[15] - m3*m3*iN 
+	];
+	
+	var A = Rj, M = UPNG.M4;
+	var b = [0.5,0.5,0.5,0.5], mi = 0, tmi = 0;
+	
+	if(N!=0)
+	for(var i=0; i<10; i++) {
+		b = M.multVec(A, b);  tmi = Math.sqrt(M.dot(b,b));  b = M.sml(1/tmi,  b);
+		if(Math.abs(tmi-mi)<1e-9) break;  mi = tmi;
+	}	
+	//b = [0,0,1,0];  mi=N;
+	var q = [m0*iN, m1*iN, m2*iN, m3*iN];
+	var eMq255 = M.dot(M.sml(255,q),b);
+	
+	var ia = (q[3]<0.001) ? 0 : 1/q[3];
+	
+	return {  Cov:Rj, q:q, e:b, L:mi,  eMq255:eMq255, eMq : M.dot(b,q),
+				rgba: (((Math.round(255*q[3])<<24) | (Math.round(255*q[2]*ia)<<16) |  (Math.round(255*q[1]*ia)<<8) | (Math.round(255*q[0]*ia)<<0))>>>0)  };
+}
+UPNG.M4 = {
+	multVec : function(m,v) {
+			return [
+				m[ 0]*v[0] + m[ 1]*v[1] + m[ 2]*v[2] + m[ 3]*v[3],
+				m[ 4]*v[0] + m[ 5]*v[1] + m[ 6]*v[2] + m[ 7]*v[3],
+				m[ 8]*v[0] + m[ 9]*v[1] + m[10]*v[2] + m[11]*v[3],
+				m[12]*v[0] + m[13]*v[1] + m[14]*v[2] + m[15]*v[3]
+			];
+	},
+	dot : function(x,y) {  return  x[0]*y[0]+x[1]*y[1]+x[2]*y[2]+x[3]*y[3];  },
+	sml : function(a,y) {  return [a*y[0],a*y[1],a*y[2],a*y[3]];  }
+}
+
+UPNG.encode.alphaMul = function(img, roundA) {
+	var nimg = new Uint8Array(img.length), area = img.length>>2; 
+	for(var i=0; i<area; i++) {
+		var qi=i<<2, ia=img[qi+3];   
+		if(roundA) ia = ((ia<128))?0:255;
+		var a = ia*(1/255);
+		nimg[qi+0] = img[qi+0]*a;  nimg[qi+1] = img[qi+1]*a;  nimg[qi+2] = img[qi+2]*a;  nimg[qi+3] = ia;
+	}
+	return nimg;
+}
+
+	
+	
+	
+	
+	
+
+
+})(UPNG, pako);
+})();
+</script>
+<script>
+/* ============================================================
+   APNG SCOPE — レイヤー合成 / タイムライン編集 / コマ個別の上書き
+   ============================================================ */
+
+const BLENDS=[
+  ['source-over','通常'],['multiply','乗算'],['screen','スクリーン'],['overlay','オーバーレイ'],
+  ['darken','比較（暗）'],['lighten','比較（明）'],['color-dodge','覆い焼き'],['color-burn','焼き込み'],
+  ['hard-light','ハードライト'],['soft-light','ソフトライト'],['difference','差の絶対値'],['exclusion','除外'],
+  ['hue','色相'],['saturation','彩度'],['color','カラー'],['luminosity','輝度']
+];
+const FITS=[['loop','ループ'],['hold','最終コマで停止'],['stretch','全体に引き伸ばし']];
+/* コマごとに上書きできる項目。fit（コマ数が足りないときの挙動）はレイヤー単位なので含めない */
+const OV_KEYS=['blend','opacity','dw','dh','x','y'];
+
+const D={
+  W:0,H:0,loop:0,
+  frames:[],            // [{delay, t, ov:{layerId:{...}}}]  t=元のタイムライン上の位置
+  layers:[],            // 下→上
+  activeLayer:null,
+  cur:0, sel:new Set(), anchor:0,
+  playing:false, speed:1, repeat:true, rafId:null, lastT:0, acc:0,
+  seq:1
+};
+let editScope='all';    // 'all' = 画像全体 / 'sel' = 選択したコマだけ
+let autoFrames=true;    // フェードに足りないコマを自動で作るか
+
+const el=id=>document.getElementById(id);
+const shell=el('shell'), drop=el('drop'), fileInput=el('fileInput'), errBox=el('errBox'),
+  cv=el('cv'), btnPrev=el('btnPrev'), btnPlay=el('btnPlay'), btnNext=el('btnNext'), btnRepeat=el('btnRepeat'),
+  scrub=el('scrub'), frameNow=el('frameNow'), frameTotal=el('frameTotal'), timeNow=el('timeNow'),
+  speedEl=el('speed'), layerList=el('layerList'), layerEdit=el('layerEdit'),
+  tlScroll=el('tlScroll'), selCount=el('selCount'), exportNote=el('exportNote');
+const ctx=cv.getContext('2d');
+
+function toast(m){const t=el('toast');t.textContent=m;t.classList.add('on');
+  clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('on'),2000)}
+function fmtBytes(n){ if(n<1024)return n+' B'; if(n<1048576)return (n/1024).toFixed(1)+' KB'; return (n/1048576).toFixed(2)+' MB'; }
+function fmtMs(ms){ return ms<1000 ? Math.round(ms)+'ms' : (ms/1000).toFixed(2)+'s'; }
+function fmtSec(ms){ return (ms/1000).toFixed(2)+'s'; }
+function totalMs(){ return D.frames.reduce((a,f)=>a+f.delay,0); }
+const DELAY_MIN=10, DELAY_MAX=60000;
+const clampDelay=v=>Math.min(DELAY_MAX,Math.max(DELAY_MIN,Math.round(v)));
+const SCALE_MAX=2000;
+const r2=v=>Math.round(v*100)/100;
+function showError(msg){ errBox.textContent=msg; errBox.classList.add('on'); }
+function clearError(){ errBox.classList.remove('on'); errBox.textContent=''; }
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+
+/* ============ 読み込み ============ */
+async function fileToLayer(file){
+  const buf=await file.arrayBuffer(), bytes=new Uint8Array(buf);
+  const isPng=bytes.length>8&&bytes[0]===0x89&&bytes[1]===0x50&&bytes[2]===0x4E&&bytes[3]===0x47;
+  if(isPng){
+    const dec=UPNG.decode(buf), rgba=UPNG.toRGBA8(dec);
+    const w=dec.width,h=dec.height,animated=!!dec.tabs.acTL;
+    const canvases=rgba.map(b=>{
+      const c=document.createElement('canvas');c.width=w;c.height=h;
+      c.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(b),w,h),0,0);
+      return c;
+    });
+    return mkLayer(file.name,w,h,canvases,animated?dec.frames.map(f=>f.delay):[100],animated);
+  }
+  const url=URL.createObjectURL(file);
+  try{
+    const img=await new Promise((res,rej)=>{const im=new Image();
+      im.onload=()=>res(im); im.onerror=()=>rej(new Error('画像として読み込めませんでした')); im.src=url;});
+    const w=img.naturalWidth,h=img.naturalHeight;
+    const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(img,0,0);
+    return mkLayer(file.name,w,h,[c],[100],false);
+  } finally { URL.revokeObjectURL(url); }
+}
+function mkLayer(name,w,h,canvases,delays,animated){
+  return {id:D.seq++,name,w,h,canvases,srcDelays:delays,animated,
+          visible:true,opacity:100,blend:'source-over',x:0,y:0,
+          dw:w,dh:h,lockAspect:true,fit:'loop',
+          /* 読み込み直後の値。「初期状態に戻す」で使う */
+          init:{opacity:100,blend:'source-over',x:0,y:0,dw:w,dh:h,lockAspect:true,fit:'loop'},
+          /* 表示区間とフェード。outAt=null は「最後のコマまで」。
+             既定は全区間表示・フェード0なので、設定しなければ従来どおりの見え方になる。 */
+          fade:{inAt:0,inLen:0,outAt:null,outLen:0,ease:'smooth'},
+          curve:[{f:0,v:100}]};
+}
+async function addFiles(files){
+  clearError(); pausePlayback();
+  const errs=[]; let added=0;
+  for(const f of files){
+    try{
+      const L=await fileToLayer(f);
+      const first=D.layers.length===0;
+      D.layers.push(L); D.activeLayer=L.id; added++;
+      if(first){
+        D.W=L.w; D.H=L.h; D.loop=0;
+        D.frames=L.canvases.map((_,i)=>({delay:L.srcDelays[i]||100,t:i,ov:null}));
+        if(!D.frames.length) D.frames=[{delay:100,t:0,ov:null}];
+      }else if(L.canvases.length>D.frames.length){
+        for(let i=D.frames.length;i<L.canvases.length;i++)
+          D.frames.push({delay:L.srcDelays[i]||100,t:i,ov:null});
+      }
+    }catch(e){ errs.push(`${f.name}: ${e&&e.message||e}`); }
+  }
+  if(errs.length) showError('読み込めなかったファイルがあります —\n'+errs.join('\n'));
+  if(!added) return;
+  D.cur=Math.min(D.cur,D.frames.length-1);
+  D.sel.clear(); editScope='all';
+  shell.classList.add('loaded');
+  syncDocInputs(); rebuildAll(true);
+  if(D.frames.length>1) startPlayback();
+}
+
+/* ============ コマ個別の上書き ============ */
+/* レイヤーの設定は既定では画像全体に効く。選択したコマだけ別の値にしたいときは
+   そのコマの ov[レイヤーID] に項目単位で積む。合成時はこれを解決して使う。 */
+function effProps(L,f){
+  const o=f&&f.ov&&f.ov[L.id];
+  if(!o) return L;
+  const r={};
+  for(const k of OV_KEYS) r[k]=(o[k]!==undefined)?o[k]:L[k];
+  return r;
+}
+function hasOv(f){
+  if(!f||!f.ov) return false;
+  return Object.keys(f.ov).some(k=>f.ov[k]&&Object.keys(f.ov[k]).length);
+}
+function cloneOv(ov){ return ov?JSON.parse(JSON.stringify(ov)):null; }
+function selIdx(){ return [...D.sel].sort((a,b)=>a-b); }
+/* 編集値の書き込み先を editScope で切り替える。
+   'all' のときは同じ項目のコマ個別設定も消して、全体変更が必ず効くようにする。 */
+function applyProps(L,patch){
+  const keys=Object.keys(patch);
+  if(editScope==='sel'&&D.sel.size){
+    selIdx().forEach(i=>{
+      const f=D.frames[i];
+      if(!f.ov) f.ov={};
+      if(!f.ov[L.id]) f.ov[L.id]={};
+      keys.forEach(k=>{ f.ov[L.id][k]=patch[k]; });
+    });
+  }else{
+    keys.forEach(k=>{ L[k]=patch[k]; });
+    D.frames.forEach(f=>{ if(f.ov&&f.ov[L.id]) keys.forEach(k=>delete f.ov[L.id][k]); });
+  }
+  renderStage(); scheduleThumbs(); refreshChipClasses(); rebuildLayers();
+}
+function clearOverrides(L,onlySelected){
+  const targets=onlySelected&&D.sel.size?selIdx().map(i=>D.frames[i]):D.frames;
+  let n=0;
+  targets.forEach(f=>{ if(f.ov&&f.ov[L.id]&&Object.keys(f.ov[L.id]).length){ delete f.ov[L.id]; n++; } });
+  renderStage(); scheduleThumbs(); refreshChipClasses(); syncLayerEditor(L); rebuildLayers();
+  return n;
+}
+/* このドキュメントに最低限必要なコマ数。
+   ・アニメーションレイヤーは元のコマ数ぶんないと途中で切れる
+   ・フェードを設定しているレイヤーはその再生に要るぶん
+   ・最低1コマ
+   カウンタを持たずその場で数えるので、途中で手動でコマを増減していてもずれない。 */
+function minFramesNeeded(){
+  let n=1;
+  for(const L of D.layers){
+    if(L.animated) n=Math.max(n,L.canvases.length);
+    n=Math.max(n,fadeNeed(L));
+  }
+  return n;
+}
+/* レイヤーを読み込み直後の状態へ戻し、それで要らなくなったコマを末尾から削る。
+   フェードのために自動で足したコマは、この経路で片づける。 */
+function resetLayer(L){
+  const before=D.frames.length;
+  const I=L.init||{};
+  ['opacity','blend','x','y','dw','dh','lockAspect','fit'].forEach(k=>{
+    if(I[k]!==undefined) L[k]=I[k];
+  });
+  L.visible=true;
+  L.fade={inAt:0,inLen:0,outAt:null,outLen:0,ease:'smooth'};
+  L.curve=[{f:0,v:100}];
+  let ov=0;
+  D.frames.forEach(f=>{ if(f.ov&&f.ov[L.id]){ delete f.ov[L.id]; ov++; } });
+  const keep=minFramesNeeded();
+  let cut=0;
+  if(D.frames.length>keep){ cut=D.frames.length-keep; D.frames.length=keep; }
+  D.cur=Math.min(D.cur,D.frames.length-1);
+  D.sel.clear();
+  rebuildAll(true);
+  return {cut,ov,before};
+}
+
+/* 編集欄に映す値：コマ単位モードなら基準コマの実効値、そうでなければレイヤーの値 */
+function refFrame(){
+  if(editScope!=='sel'||!D.sel.size) return null;
+  const idx=selIdx();
+  return D.frames[idx.includes(D.cur)?D.cur:idx[0]];
+}
+function editVals(L){ const f=refFrame(); return f?effProps(L,f):L; }
+/* コマ番号→そのコマが始まる時刻(ms)。コマごとの表示時間が違っても正しく出る */
+/* 全体の速さ。コマごとの表示時間がばらついていても分かるように、
+   平均から出した「コマ/秒」を出し、ばらつきがあるときはその旨も添える。 */
+function fpsInfo(){
+  const n=D.frames.length;
+  if(!n) return {fps:0,even:true,ms:0};
+  const total=D.frames.reduce((a,f)=>a+(f.delay||0),0);
+  const avg=total/n;
+  const even=D.frames.every(f=>Math.abs((f.delay||0)-avg)<0.5);
+  return {fps:avg>0?1000/avg:0, even, ms:avg, total};
+}
+function fpsLabel(){
+  const i=fpsInfo();
+  if(!i.fps) return '—';
+  const v=i.fps>=10?i.fps.toFixed(1):i.fps.toFixed(2);
+  return `${v} コマ/秒`+(i.even?'':'（平均・不均一）');
+}
+function timeAt(i){
+  let t=0;
+  for(let k=0;k<Math.min(i,D.frames.length);k++) t+=D.frames[k].delay||0;
+  return t;
+}
+/* from から n コマぶんの長さ(ms) */
+function spanMs(from,n){
+  let t=0;
+  for(let k=Math.max(0,from);k<Math.min(from+n,D.frames.length);k++) t+=D.frames[k].delay||0;
+  return t;
+}
+
+/* ============ 表示区間とフェード ============
+   フェードはコマ個別の上書きとして焼き込まず、レイヤーの設定として持ち、
+   合成のときに係数として掛ける。こうするとあとから長さだけを変えられる。
+
+     最終的な不透明度 = レイヤーの不透明度（コマ個別の上書きを含む） × フェード係数
+
+   区間の外は0。区間の内側では、入りと出のそれぞれ n コマぶんを
+   1/(n+1) … n/(n+1) で刻む。両端の段差が 1/(n+1) で揃うので、
+   「消えている→出はじめ」と「出おわり→全開」が同じ大きさの変化になる。 */
+const smoothstep=t=>t*t*(3-2*t);
+
+/* ---- 不透明度カーブ ----
+   レイヤーの不透明度は「点の列」で持つ。横軸がコマ番号、縦軸が0〜100%。
+   これが唯一の正で、プレビューもタイムラインの各行も書き出しも同じ関数を通る。
+   点と点のあいだは、なめらか（S字）か直線かを切り替えて補間する。
+   最初の点より前は最初の値、最後の点より後は最後の値を保つ。 */
+function curveOf(L){
+  const c=(L&&L.curve&&L.curve.length)?L.curve:[{f:0,v:100}];
+  return [...c].sort((a,b)=>a.f-b.f);
+}
+function curveAlpha(L,i){
+  const c=curveOf(L);
+  if(c.length===1) return c[0].v/100;
+  if(i<=c[0].f) return c[0].v/100;
+  if(i>=c[c.length-1].f) return c[c.length-1].v/100;
+  for(let k=0;k<c.length-1;k++){
+    const a=c[k], b=c[k+1];
+    if(i>=a.f&&i<=b.f){
+      const span=b.f-a.f;
+      if(span<=0) return b.v/100;
+      let u=(i-a.f)/span;
+      if(((L.fade&&L.fade.ease)||'smooth')!=='linear') u=smoothstep(u);
+      return (a.v+(b.v-a.v)*u)/100;
+    }
+  }
+  return c[c.length-1].v/100;
+}
+/* 呼び出し側はこれまでどおりこの名前を使う */
+const fadeAlpha=(L,i)=>curveAlpha(L,i);
+const curveMaxF=L=>curveOf(L).reduce((m,p)=>Math.max(m,p.f),0);
+function fadeLabel(L){
+  const c=curveOf(L);
+  if(c.length<=1) return '';
+  const lo=Math.round(Math.min(...c.map(p=>p.v)));
+  const hi=Math.round(Math.max(...c.map(p=>p.v)));
+  return `カーブ${c.length}点 ${lo}〜${hi}%`;
+}
+/* 数値欄（形を作るための下ごしらえ）の値をまとめる。カーブそのものではない。 */
+function fadeRange(L){
+  const last=Math.max(0,D.frames.length-1), F=L.fade||{};
+  const a=Math.max(0,Math.min(last,Math.round(F.inAt||0)));
+  const b=(F.outAt===null||F.outAt===undefined)?last:Math.max(a,Math.min(last,Math.round(F.outAt)));
+  return {a,b,last,inLen:Math.max(0,Math.round(F.inLen||0)),
+          outLen:Math.max(0,Math.round(F.outLen||0)),ease:F.ease||'smooth'};
+}
+/* 数値欄の台形から点の列を組み立てる。「この形を作る」で呼ぶ。 */
+function curveFromFade(L,lastIdx){
+  const F=L.fade||{}, last=lastIdx;
+  const inAt=Math.max(0,Math.round(F.inAt||0));
+  const inLen=Math.max(0,Math.round(F.inLen||0));
+  const outLen=Math.max(0,Math.round(F.outLen||0));
+  const end=(F.outAt===null||F.outAt===undefined)?last:Math.max(inAt,Math.min(last,Math.round(F.outAt)));
+  const pts=[];
+  if(inAt>0) pts.push({f:0,v:0});
+  if(inLen>0){ pts.push({f:inAt,v:0}); pts.push({f:Math.min(end,inAt+inLen),v:100}); }
+  else pts.push({f:inAt,v:100});
+  if(outLen>0){ pts.push({f:Math.max(inAt,end-outLen),v:100}); pts.push({f:end,v:0}); }
+  else pts.push({f:end,v:100});
+  if(end<last) pts.push({f:last,v:outLen>0?0:100});
+  /* 同じコマに2つ置かない。あとから来た値を採る */
+  const m=new Map();
+  pts.sort((a,b)=>a.f-b.f).forEach(pt=>m.set(pt.f,pt));
+  return [...m.values()].sort((a,b)=>a.f-b.f);
+}
+/* 標準の表示間隔。末尾のコマの長さを使う（そこに足していくため） */
+function stdDelay(){
+  const f=D.frames[D.frames.length-1];
+  return clampDelay(f?f.delay:100);
+}
+/* 秒 ⇄ コマ数の換算。表示間隔が一定でないこともあるので、
+   末尾の間隔を基準にする（これから作るコマの長さがそれになるため）。 */
+const secToFrames=sec=>Math.max(0,Math.round(sec*1000/stdDelay()));
+const framesToSec=n=>n*stdDelay()/1000;
+
+/* カーブが収まるのに必要なコマ数。いちばん右の点まで。 */
+function fadeNeed(L){ return curveMaxF(L)+1; }
+/* 数値欄の指定が要求するコマ数（「この形を作る」の前に確保する分） */
+function fadeNeedFromFields(L){
+  const F=L.fade||{};
+  if(F.outAt!==null&&F.outAt!==undefined) return (F.outAt|0)+1;
+  return (F.inAt|0)+(F.inLen|0)+(F.outLen|0)+1;
+}
+/* 静止画に「1秒かけて出す」と指定しても、コマが1枚しかなければ何も起きない。
+   足りないぶんを末尾に足して、指定した長さのフェードが成立するようにする。
+   追加するコマの t は連番で続けるので、同居しているアニメーションも自然に進む。 */
+function ensureFramesFor(L,want){
+  if(!autoFrames||!L) return 0;
+  const need=(want!==undefined)?want:fadeNeed(L), have=D.frames.length;
+  if(need<=have) return 0;
+  const add=Math.min(need,600)-have;                            // 際限なく増えないように上限
+  if(add<=0) return 0;
+  const d=stdDelay();
+  let t=D.frames.length?D.frames[D.frames.length-1].t:-1;
+  for(let k=0;k<add;k++) D.frames.push({delay:d,t:++t,ov:null});
+  return add;
+}
+
+/* ずっと100%のままかどうか（表示に使う） */
+function fadeIsDefault(L){
+  const c=curveOf(L);
+  return c.every(p=>p.v>=100);
+}
+
+/* ============ 合成 ============ */
+function mapFrame(L,t){
+  const n=L.canvases.length;
+  if(n<=1) return 0;
+  if(L.fit==='hold') return Math.min(t,n-1);
+  if(L.fit==='stretch'){ const span=Math.max(1,docSpan()); return Math.min(n-1,Math.floor(t/span*n)); }
+  return ((t%n)+n)%n;
+}
+function docSpan(){ let m=0; for(const f of D.frames) if(f.t>m)m=f.t; return m+1; }
+
+/* sf は縮小書き出し用の倍率。W,H には縮小後の実寸を渡す。 */
+function compositeTo(c2d,frameIdx,W,H,sf){
+  const s=sf||1;
+  c2d.save(); c2d.setTransform(1,0,0,1,0,0); c2d.clearRect(0,0,W,H); c2d.restore();
+  const f=D.frames[frameIdx];
+  if(!f) return;
+  for(const L of D.layers){
+    if(!L.visible) continue;
+    const p=effProps(L,f);
+    const fa=fadeAlpha(L,frameIdx);
+    if(p.opacity<=0||fa<=0) continue;
+    const src=L.canvases[mapFrame(L,f.t)];
+    if(!src) continue;
+    c2d.save();
+    c2d.globalAlpha=p.opacity/100*fa;
+    c2d.globalCompositeOperation=p.blend;
+    c2d.drawImage(src,p.x*s,p.y*s,p.dw*s,p.dh*s);
+    c2d.restore();
+  }
+  c2d.globalAlpha=1; c2d.globalCompositeOperation='source-over';
+}
+function renderStage(){
+  if(cv.width!==D.W||cv.height!==D.H){ cv.width=D.W; cv.height=D.H; }
+  compositeTo(ctx,D.cur,D.W,D.H);
+}
+
+/* ============ レイヤーUI ============ */
+function activeLayer(){ return D.layers.find(l=>l.id===D.activeLayer)||null; }
+function rebuildLayers(){
+  layerList.innerHTML='';
+  if(!D.layers.length){ layerList.innerHTML='<p class="empty-note">レイヤーがありません</p>'; layerEdit.innerHTML=''; layerEdit.dataset.for=''; return; }
+  D.layers.forEach((L,idx)=>{
+    const row=document.createElement('div');
+    row.className='layer'+(L.visible?' vis':'')+(L.id===D.activeLayer?' active':'');
+    const th=document.createElement('canvas'); th.className='thumb'; th.width=30; th.height=30;
+    const t2=th.getContext('2d'); const s=Math.min(30/L.w,30/L.h);
+    t2.drawImage(L.canvases[0],(30-L.w*s)/2,(30-L.h*s)/2,L.w*s,L.h*s);
+    const eye=document.createElement('button');
+    eye.className='eye'; eye.type='button'; eye.textContent='◉';
+    eye.title=L.visible?'非表示にする':'表示する'; eye.setAttribute('aria-label',eye.title);
+    eye.addEventListener('click',ev=>{ev.stopPropagation();L.visible=!L.visible;
+      rebuildLayers();renderStage();scheduleThumbs();refreshChipClasses()});
+    const meta=document.createElement('div'); meta.className='meta';
+    const bl=(BLENDS.find(b=>b[0]===L.blend)||[])[1]||'';
+    const ovCount=D.frames.filter(f=>f.ov&&f.ov[L.id]&&Object.keys(f.ov[L.id]).length).length;
+    meta.innerHTML=`<div class="nm">${escapeHtml(L.name)}</div>`
+      +`<div class="sub">${L.w}×${L.h} / ${L.animated?L.canvases.length+'コマ':'静止画'} / ${bl} ${L.opacity}%`
+      +(ovCount?` / <span style="color:var(--warn)">個別${ovCount}</span>`:'')
+      +(fadeIsDefault(L)?'':` / <span style="color:var(--accent)">${fadeLabel(L)}</span>`)+`</div>`;
+    const ord=document.createElement('div'); ord.className='ord';
+    const up=document.createElement('button'); up.type='button'; up.textContent='▲'; up.title='ひとつ上へ';
+    const dn=document.createElement('button'); dn.type='button'; dn.textContent='▼'; dn.title='ひとつ下へ';
+    up.disabled=idx===D.layers.length-1; dn.disabled=idx===0;
+    up.addEventListener('click',ev=>{ev.stopPropagation();moveLayer(idx,1)});
+    dn.addEventListener('click',ev=>{ev.stopPropagation();moveLayer(idx,-1)});
+    ord.append(up,dn);
+    row.append(eye,th,meta,ord);
+    row.addEventListener('click',()=>{D.activeLayer=L.id;rebuildLayers()});
+    layerList.appendChild(row);
+  });
+  buildLayerEditor();
+}
+function moveLayer(idx,dir){
+  const j=idx+dir;
+  if(j<0||j>=D.layers.length) return;
+  const [L]=D.layers.splice(idx,1); D.layers.splice(j,0,L);
+  /* トラックの並びもレイヤーパネルに合わせて作り直す */
+  rebuildLayers(); rebuildTimeline(true); renderStage(); scheduleThumbs();
+}
+
+function syncLayerEditor(L){
+  const v=editVals(L);
+  const set=(id,val)=>{const e=el(id); if(e&&e.value!==String(val)) e.value=val;};
+  set('lBlend',v.blend); set('lFit',L.fit);
+  set('lOpacity',v.opacity);
+  set('lScale',Math.min(400,Math.round(v.dw/L.w*100)));
+  set('lDw',r2(v.dw)); set('lDh',r2(v.dh)); set('lX',r2(v.x)); set('lY',r2(v.y));
+  const lk=el('lLock'); if(lk) lk.checked=L.lockAspect;
+  const vo=el('vOpacity'), vs=el('vScale');
+  if(vo) vo.textContent=v.opacity+'%';
+  if(vs) vs.textContent=r2(v.dw/L.w*100)+'%';
+  /* フェード欄。コマ数の入力に、その長さが何秒になるかを添える */
+  if(el('fdInAt')){
+    const R=fadeRange(L), F=L.fade;
+    set('fdInAt',R.a); set('fdInLen',R.inLen);
+    set('fdOutAt',R.b); set('fdOutLen',R.outLen);
+    const es=el('fdEase'); if(es&&es.value!==(F.ease||'smooth')) es.value=F.ease||'smooth';
+    const au=el('fdAuto'); if(au) au.checked=autoFrames;
+    /* 秒の欄は、入力中でなければコマ数から書き戻す */
+    [['fdInSec',R.inLen],['fdOutSec',R.outLen]].forEach(([id,n])=>{
+      const e=el(id); if(e&&document.activeElement!==e) e.value=framesToSec(n).toFixed(2);
+    });
+    [['fdInAt','fdInAtSec'],['fdOutAt','fdOutAtSec']].forEach(([a,b])=>{
+      const e=el(b); if(e) e.textContent='≈'+fmtSec(timeAt(+el(a).value));
+    });
+
+    syncCurveNote(L);
+    const fb=el('fadeBox'); if(fb) fb.classList.toggle('on',!fadeIsDefault(L));
+    const note=el('fadeNote');
+    const c=curveOf(L);
+    note && (note.textContent=fadeIsDefault(L)
+      ? `グラフを直接いじるか、下の数値を入れて「この形を作る」を押してください。静止画でも、指定した長さぶんのコマが自動で作られます（いまは1コマ ${stdDelay()}ms・全${D.frames.length}コマ・${fpsLabel()}）。`
+      : `点${c.length}個のカーブが全${D.frames.length}コマに適用されています（${fpsLabel()}）。`);
+    drawCurve();
+  }
+  const sa=el('scAll'), ss=el('scSel'), nt=el('scNote'), box=el('scopeBox');
+  if(sa){
+    sa.setAttribute('aria-pressed',String(editScope==='all'));
+    ss.setAttribute('aria-pressed',String(editScope==='sel'));
+    const on=editScope==='sel'&&D.sel.size>0;
+    box.classList.toggle('on',on);
+    nt.textContent = editScope==='sel'
+      ? (D.sel.size?`選択中の${D.sel.size}コマにだけ反映されます`:'コマが選択されていません（下のタイムラインで選んでください）')
+      : '';
+  }
+}
+function buildLayerEditor(force){
+  const L=activeLayer();
+  if(!L){ layerEdit.innerHTML=''; layerEdit.dataset.for=''; return; }
+  if(!force&&layerEdit.dataset.for===String(L.id)){ syncLayerEditor(L); return; }
+  layerEdit.dataset.for=String(L.id);
+  const v=editVals(L);
+  layerEdit.innerHTML=`
+    <div class="scope" id="scopeBox">
+      <span class="lb">変更の対象</span>
+      <button class="chip" id="scAll" aria-pressed="true">画像全体</button>
+      <button class="chip" id="scSel" aria-pressed="false">選択したコマだけ</button>
+      <span class="note" id="scNote"></span>
+      <button class="btn sm" id="scClear" style="margin-left:auto">個別設定を解除</button>
+      <button class="btn sm danger" id="scReset" title="このレイヤーを読み込み直後の状態に戻し、要らなくなったコマも削ります">初期状態に戻す</button>
+    </div>
+    <div class="grid">
+      <label class="fld">合成モード<select id="lBlend">${
+        BLENDS.map(([b,n])=>`<option value="${b}"${v.blend===b?' selected':''}>${n}</option>`).join('')}</select></label>
+      <label class="fld">コマ数が足りないとき<select id="lFit"${L.animated?'':' disabled'}>${
+        FITS.map(([b,n])=>`<option value="${b}"${L.fit===b?' selected':''}>${n}</option>`).join('')}</select></label>
+    </div>
+    <div class="slider-row">
+      <div class="lab"><label for="lOpacity">不透明度</label><b id="vOpacity">${v.opacity}%</b></div>
+      <input type="range" id="lOpacity" min="0" max="100" step="1" value="${v.opacity}">
+    </div>
+    <div class="slider-row">
+      <div class="lab"><label for="lScale">拡大率</label><b id="vScale">${r2(v.dw/L.w*100)}%</b></div>
+      <input type="range" id="lScale" min="1" max="400" step="1" value="${Math.min(400,Math.round(v.dw/L.w*100))}">
+    </div>
+    <div class="row">
+      <label class="fld">表示幅（px）<input type="number" id="lDw" min="1" max="8192" step="1" value="${r2(v.dw)}"></label>
+      <label class="fld">表示高さ（px）<input type="number" id="lDh" min="1" max="8192" step="1" value="${r2(v.dh)}"></label>
+      <label class="chk" style="align-self:flex-end;padding-bottom:6px"><input type="checkbox" id="lLock"${L.lockAspect?' checked':''}>縦横比を固定</label>
+      <label class="fld">&nbsp;<button class="btn sm" id="lReset">元の大きさ</button></label>
+    </div>
+    <div class="row">
+      <label class="fld">位置 X<input type="number" id="lX" step="1" value="${r2(v.x)}"></label>
+      <label class="fld">位置 Y<input type="number" id="lY" step="1" value="${r2(v.y)}"></label>
+      <label class="fld">&nbsp;<button class="btn sm" id="lCenter">中央に置く</button></label>
+    </div>
+    <div class="fadebox" id="fadeBox">
+      <div class="row" style="align-items:center">
+        <span class="lb">不透明度カーブ</span>
+        <span class="note" id="fadeNow" style="margin-left:auto"></span>
+      </div>
+      <canvas id="fdCurve" class="curve" tabindex="0"
+        title="クリックで点を追加 / ドラッグで移動 / 右クリックかダブルクリックで削除"></canvas>
+      <div class="row" style="align-items:flex-end">
+        <label class="fld" style="flex:1 1 120px">変化の仕方<select id="fdEase">
+          <option value="smooth">なめらか</option><option value="linear">直線</option></select></label>
+        <button class="btn sm" id="fdReset" title="カーブを100%の一本に戻します。コマは減りません">まっすぐに戻す</button>
+      </div>
+      <p class="note" id="curveHint">クリックで点を追加、ドラッグで移動、右クリック（またはダブルクリック）で削除。横軸がコマ、縦軸が不透明度です。</p>
+      <div class="fdgrid">
+        <label class="fld">表示開始（コマ）<input type="number" id="fdInAt" min="0" step="1"><span class="sec" id="fdInAtSec"></span></label>
+        <label class="fld">表示終了（コマ）<input type="number" id="fdOutAt" min="0" step="1"><span class="sec" id="fdOutAtSec"></span></label>
+        <label class="fld">フェードイン（コマ）<input type="number" id="fdInLen" min="0" step="1"></label>
+        <label class="fld">同（秒）<input type="number" id="fdInSec" min="0" step="0.05"></label>
+        <label class="fld">フェードアウト（コマ）<input type="number" id="fdOutLen" min="0" step="1"></label>
+        <label class="fld">同（秒）<input type="number" id="fdOutSec" min="0" step="0.05"></label>
+      </div>
+      <div class="row" style="align-items:center">
+        <button class="btn sm" id="fdApply">この形を作る</button>
+        <button class="btn sm" id="fdSel">選択範囲を区間に</button>
+        <label class="chk" style="margin-left:auto">
+          <input type="checkbox" id="fdAuto" checked>足りないコマを自動で作る</label>
+      </div>
+      <p class="note" id="fadeNote"></p>
+    </div>
+    <div class="row">
+      <span style="font-size:10px;color:var(--muted)">キャンバスに合わせる</span>
+      <button class="btn sm" id="lFitW">幅</button>
+      <button class="btn sm" id="lFitH">高さ</button>
+      <button class="btn sm" id="lFitContain">収める</button>
+      <button class="btn sm" id="lFitCover">覆う</button>
+      <button class="btn sm" id="lFitStretch">引き伸ばす</button>
+    </div>`;
+
+  el('scAll').addEventListener('click',()=>{editScope='all';syncLayerEditor(L)});
+  el('scSel').addEventListener('click',()=>{
+    editScope='sel'; syncLayerEditor(L);
+    if(!D.sel.size) toast('下のタイムラインでコマを選んでください');
+  });
+  el('scReset').addEventListener('click',()=>{
+    const r=resetLayer(L);
+    const parts=[];
+    if(r.ov) parts.push(`個別設定${r.ov}コマ分を解除`);
+    if(r.cut) parts.push(`${r.cut}コマを削除（${r.before}→${D.frames.length}）`);
+    toast('初期状態に戻しました'+(parts.length?` — ${parts.join('・')}`:''));
+  });
+  el('scClear').addEventListener('click',()=>{
+    const only=editScope==='sel'&&D.sel.size>0;
+    const n=clearOverrides(L,only);
+    toast(n?`${n}コマの個別設定を解除しました`:'個別設定はありません');
+  });
+
+  el('lBlend').addEventListener('change',e=>applyProps(L,{blend:e.target.value}));
+  const fitSel=el('lFit');
+  if(fitSel) fitSel.addEventListener('change',e=>{L.fit=e.target.value;renderStage();scheduleThumbs()});
+  el('lOpacity').addEventListener('input',e=>{
+    el('vOpacity').textContent=e.target.value+'%';
+    applyProps(L,{opacity:+e.target.value});
+  });
+  const setPct=want=>{
+    const cur=editVals(L);
+    const p=Math.max(1,Math.min(SCALE_MAX,want));
+    const f=(L.w*p/100)/cur.dw;
+    applyProps(L,{dw:cur.dw*f,dh:cur.dh*f});
+    syncLayerEditor(L);
+  };
+  el('lScale').addEventListener('input',e=>setPct(+e.target.value));
+  const sizeInput=(which,e)=>{
+    const raw=parseFloat(e.target.value);
+    if(!isFinite(raw)||raw<=0) return;
+    const nv=Math.min(8192,raw), cur=editVals(L);
+    let dw=cur.dw, dh=cur.dh;
+    if(which==='w'){ if(L.lockAspect) dh=nv*(cur.dh/cur.dw); dw=nv; }
+    else { if(L.lockAspect) dw=nv*(cur.dw/cur.dh); dh=nv; }
+    applyProps(L,{dw,dh});
+    el(which==='w'?'lDh':'lDw').value=r2(which==='w'?dh:dw);
+    el('lScale').value=Math.min(400,Math.round(dw/L.w*100));
+    el('vScale').textContent=r2(dw/L.w*100)+'%';
+  };
+  el('lDw').addEventListener('input',e=>sizeInput('w',e));
+  el('lDh').addEventListener('input',e=>sizeInput('h',e));
+  el('lLock').addEventListener('change',e=>{L.lockAspect=e.target.checked});
+  el('lReset').addEventListener('click',()=>{applyProps(L,{dw:L.w,dh:L.h});syncLayerEditor(L)});
+  el('lX').addEventListener('input',e=>applyProps(L,{x:parseFloat(e.target.value)||0}));
+  el('lY').addEventListener('input',e=>applyProps(L,{y:parseFloat(e.target.value)||0}));
+  el('lCenter').addEventListener('click',()=>{
+    const c=editVals(L);
+    applyProps(L,{x:(D.W-c.dw)/2,y:(D.H-c.dh)/2}); syncLayerEditor(L);
+  });
+  const fits=[['lFitW','width'],['lFitH','height'],['lFitContain','contain'],['lFitCover','cover'],['lFitStretch','stretch']];
+  fits.forEach(([id,mode])=>el(id).addEventListener('click',()=>fitLayer(L,mode)));
+  bindCurve(L);
+
+  /* フェードはコマ個別の上書きではなくレイヤー設定なので、editScope は通さない。
+     設定を変えたあとに、その長さが再生できるだけのコマがあるかを見て足す。 */
+  /* 数値欄はカーブを直接いじらない。「この形を作る」を押したときだけ点の列を組み直す。
+     ドラッグで作り込んだ形が、数字を打ち直しただけで消えてしまわないようにするため。 */
+  const fdNum=(id,key)=>el(id).addEventListener('input',e=>{
+    const raw=parseInt(e.target.value,10);
+    if(!isFinite(raw)) return;
+    let v=Math.max(0,raw);
+    L.fade[key]=(key==='outAt'&&v>=Math.max(0,D.frames.length-1))?null:v;
+    syncLayerEditor(L);
+  });
+  fdNum('fdInAt','inAt'); fdNum('fdInLen','inLen');
+  fdNum('fdOutAt','outAt'); fdNum('fdOutLen','outLen');
+  /* 秒の欄。表示間隔からコマ数へ直して同じ場所へ入れる */
+  const fdSec=(id,key)=>el(id).addEventListener('input',e=>{
+    const sec=parseFloat(e.target.value);
+    if(!isFinite(sec)||sec<0) return;
+    L.fade[key]=secToFrames(sec);
+    syncLayerEditor(L);
+  });
+  fdSec('fdInSec','inLen'); fdSec('fdOutSec','outLen');
+
+  el('fdApply').addEventListener('click',()=>{
+    const added=ensureFramesFor(L,fadeNeedFromFields(L));
+    const last=Math.max(0,D.frames.length-1);
+    L.curve=curveFromFade(L,last);
+    curveSel=-1;
+    if(added) rebuildAll(true); else { renderStage(); scheduleThumbs(); refreshChipClasses(); rebuildLayers(); }
+    drawCurve(); syncLayerEditor(L);
+    toast(added?`この形を作りました（${added}コマ追加・1コマ ${stdDelay()}ms）`:'この形を作りました');
+  });
+  el('fdAuto').addEventListener('change',e=>{ autoFrames=e.target.checked; });
+  el('fdEase').addEventListener('change',e=>{
+    L.fade.ease=e.target.value;
+    renderStage(); scheduleThumbs(); drawCurve();
+  });
+  el('fdSel').addEventListener('click',()=>{
+    if(!D.sel.size) return toast('下のタイムラインでコマを選んでください');
+    const idx=selIdx(), last=Math.max(0,D.frames.length-1);
+    L.fade.inAt=idx[0];
+    L.fade.outAt=(idx[idx.length-1]>=last)?null:idx[idx.length-1];
+    syncLayerEditor(L);
+    toast(`コマ ${idx[0]+1}〜${idx[idx.length-1]+1} を区間に入れました。「この形を作る」で反映されます`);
+  });
+  el('fdReset').addEventListener('click',()=>{
+    L.curve=[{f:0,v:100}]; curveSel=-1;
+    /* ここではコマを減らさない。コマごと戻したいときは上の「初期状態に戻す」を使う */
+    renderStage(); scheduleThumbs(); rebuildLayers(); syncLayerEditor(L);
+    toast('カーブをまっすぐに戻しました');
+  });
+  syncLayerEditor(L);
+}
+/* ぴったり合わせた軸は実寸をキャンバス値そのものにし開始位置を0に固定する。
+   丸めた拡大率から座標を逆算すると端数が出て、四辺に半透明の縁が残るため。 */
+function fitLayer(L,mode){
+  const rw=D.W/L.w, rh=D.H/L.h;
+  let patch;
+  if(mode==='stretch'){
+    patch={dw:D.W,dh:D.H,x:0,y:0};
+  }else{
+    const r=mode==='width'?rw:mode==='height'?rh:mode==='cover'?Math.max(rw,rh):Math.min(rw,rh);
+    let dw=L.w*r, dh=L.h*r, x, y;
+    const exW=(mode==='width')||(mode==='cover'&&rw>=rh)||(mode==='contain'&&rw<=rh);
+    const exH=(mode==='height')||(mode==='cover'&&rh>=rw)||(mode==='contain'&&rh<=rw);
+    if(exW){ dw=D.W; x=0; } else { x=(D.W-dw)/2; }
+    if(exH){ dh=D.H; y=0; } else { y=(D.H-dh)/2; }
+    patch={dw,dh,x,y};
+  }
+  applyProps(L,patch); syncLayerEditor(L);
+}
+
+el('btnAddLayer').addEventListener('click',()=>fileInput.click());
+el('btnDelLayer').addEventListener('click',()=>{
+  const L=activeLayer();
+  if(!L) return toast('削除するレイヤーが選ばれていません');
+  D.frames.forEach(f=>{ if(f.ov) delete f.ov[L.id]; });   // 個別設定も一緒に片付ける
+  D.layers=D.layers.filter(x=>x.id!==L.id);
+  D.activeLayer=D.layers.length?D.layers[D.layers.length-1].id:null;
+  if(!D.layers.length){ shell.classList.remove('loaded'); D.frames=[]; stopPlayback(); }
+  rebuildAll(true); toast('レイヤーを削除しました');
+});
+
+/* ============ 不透明度カーブのグラフ ============
+   横軸＝0コマ目から最終コマ、縦軸＝0〜100%。点はコマ番号に吸着させる。
+   ここで触った結果がそのまま合成に使われるので、見えている形＝書き出される形になる。 */
+const CV_PAD={l:30,r:10,t:10,b:18};
+let curveDrag=null;
+function curveGeom(cv){
+  const r=cv.getBoundingClientRect();
+  const last=Math.max(1,D.frames.length-1);
+  const x0=CV_PAD.l, x1=r.width-CV_PAD.r, y0=CV_PAD.t, y1=r.height-CV_PAD.b;
+  return {r,last,x0,x1,y0,y1,
+    X:f=>x0+(f/last)*(x1-x0),
+    Y:v=>y0+(1-v/100)*(y1-y0),
+    toF:px=>Math.round(((px-x0)/(x1-x0))*last),
+    toV:py=>Math.round((1-(py-y0)/(y1-y0))*100)};
+}
+function drawCurve(){
+  const cv=el('fdCurve'), L=activeLayer();
+  if(!cv||!L) return;
+  const g=curveGeom(cv), dpr=window.devicePixelRatio||1;
+  const w=Math.max(1,Math.round(g.r.width)), h=Math.max(1,Math.round(g.r.height));
+  if(cv.width!==w*dpr||cv.height!==h*dpr){ cv.width=w*dpr; cv.height=h*dpr; }
+  const c=cv.getContext('2d');
+  c.setTransform(dpr,0,0,dpr,0,0);
+  c.clearRect(0,0,w,h);
+  const css=getComputedStyle(document.documentElement);
+  const LINE=css.getPropertyValue('--line').trim()||'#2A2F3A';
+  const MUT=css.getPropertyValue('--muted').trim()||'#838B9C';
+  const ACC=css.getPropertyValue('--accent').trim()||'#6EE7B7';
+  const WARN=css.getPropertyValue('--warn').trim()||'#FFB86B';
+  /* 目盛り：不透明度は0/50/100、コマは端と中央 */
+  c.strokeStyle=LINE; c.fillStyle=MUT; c.lineWidth=1;
+  c.font='9px "IBM Plex Mono",monospace'; c.textBaseline='middle';
+  [0,50,100].forEach(v=>{
+    const y=Math.round(g.Y(v))+.5;
+    c.beginPath(); c.moveTo(g.x0,y); c.lineTo(g.x1,y); c.stroke();
+    c.textAlign='right'; c.fillText(v+'%',g.x0-4,y);
+  });
+  c.textAlign='center'; c.textBaseline='top';
+  const marks=[0,Math.round(g.last/2),g.last];
+  [...new Set(marks)].forEach(f=>{
+    const x=Math.round(g.X(f))+.5;
+    c.strokeStyle=LINE; c.beginPath(); c.moveTo(x,g.y0); c.lineTo(x,g.y1); c.stroke();
+    c.fillText(String(f+1),x,g.y1+3);
+  });
+  /* 現在のコマ */
+  const cx=Math.round(g.X(Math.min(D.cur,g.last)))+.5;
+  c.strokeStyle=WARN; c.setLineDash([3,3]);
+  c.beginPath(); c.moveTo(cx,g.y0); c.lineTo(cx,g.y1); c.stroke();
+  c.setLineDash([]);
+  /* カーブ本体。実際に各コマへ適用される値をそのまま線にするので、
+     補間の仕方（なめらか／直線）の違いが目で見て分かる。 */
+  const pts=curveOf(L);
+  c.strokeStyle=ACC; c.lineWidth=1.6; c.beginPath();
+  for(let f=0;f<=g.last;f++){
+    const x=g.X(f), y=g.Y(curveAlpha(L,f)*100);
+    if(f===0) c.moveTo(x,y); else c.lineTo(x,y);
+  }
+  c.stroke();
+  /* 塗り */
+  c.lineTo(g.X(g.last),g.Y(0)); c.lineTo(g.X(0),g.Y(0)); c.closePath();
+  c.fillStyle=ACC+'22'; c.fill();
+  /* 点 */
+  pts.forEach((pt,i)=>{
+    const x=g.X(Math.min(pt.f,g.last)), y=g.Y(pt.v);
+    c.beginPath(); c.arc(x,y,i===curveSel?5:4,0,Math.PI*2);
+    c.fillStyle=i===curveSel?WARN:ACC; c.fill();
+    c.strokeStyle='#0D0F13'; c.lineWidth=1.5; c.stroke();
+  });
+}
+let curveSel=-1;
+function curveHit(L,g,px,py){
+  const pts=curveOf(L);
+  for(let i=0;i<pts.length;i++){
+    const dx=px-g.X(Math.min(pts[i].f,g.last)), dy=py-g.Y(pts[i].v);
+    if(dx*dx+dy*dy<=81) return i;
+  }
+  return -1;
+}
+function curveCommit(L,msg){
+  L.curve=curveOf(L);
+  renderStage(); scheduleThumbs(); refreshChipClasses(); rebuildLayers();
+  drawCurve(); syncCurveNote(L);
+  if(msg) toast(msg);
+}
+function syncCurveNote(L){
+  const now=Math.round(curveAlpha(L,D.cur)*100);
+  const fn=el('fadeNow');
+  if(fn) fn.textContent=`コマ ${D.cur+1} での見え方: ${now}%`;
+}
+function bindCurve(L){
+  const cv=el('fdCurve'); if(!cv) return;
+  cv.oncontextmenu=e=>{
+    e.preventDefault();
+    const g=curveGeom(cv), r=g.r;
+    const i=curveHit(L,g,e.clientX-r.left,e.clientY-r.top);
+    if(i<0) return;
+    const pts=curveOf(L);
+    if(pts.length<=1) return toast('点は1つ以上必要です');
+    pts.splice(i,1); L.curve=pts; curveSel=-1;
+    curveCommit(L,'点を削除しました');
+  };
+  cv.onpointerdown=e=>{
+    const g=curveGeom(cv), r=g.r;
+    const px=e.clientX-r.left, py=e.clientY-r.top;
+    let i=curveHit(L,g,px,py);
+    const pts=curveOf(L);
+    if(i<0){
+      /* 空きをクリックしたらその位置に点を足して、そのままつかんだ状態にする */
+      const f=Math.max(0,Math.min(g.last,g.toF(px)));
+      if(pts.some(pt=>pt.f===f)){ i=pts.findIndex(pt=>pt.f===f); }
+      else{
+        pts.push({f,v:Math.max(0,Math.min(100,g.toV(py)))});
+        pts.sort((a,b)=>a.f-b.f);
+        i=pts.findIndex(pt=>pt.f===f);
+        L.curve=pts;
+      }
+    }
+    curveSel=i; curveDrag={i};
+    cv.setPointerCapture(e.pointerId);
+    curveCommit(L);
+    e.preventDefault();
+  };
+  cv.onpointermove=e=>{
+    if(!curveDrag) return;
+    const g=curveGeom(cv), r=g.r;
+    const pts=curveOf(L);
+    const pt=pts[curveDrag.i]; if(!pt) return;
+    pt.f=Math.max(0,Math.min(g.last,g.toF(e.clientX-r.left)));
+    pt.v=Math.max(0,Math.min(100,g.toV(e.clientY-r.top)));
+    /* 同じコマに重なったら、動かしている方を残す */
+    const dedup=new Map();
+    pts.forEach((q,k)=>{ if(k!==curveDrag.i) dedup.set(q.f,q); });
+    dedup.set(pt.f,pt);
+    const next=[...dedup.values()].sort((a,b)=>a.f-b.f);
+    curveDrag.i=next.indexOf(pt); curveSel=curveDrag.i;
+    L.curve=next;
+    renderStage(); drawCurve(); syncCurveNote(L);
+    const hint=el('curveHint');
+    if(hint) hint.textContent=`コマ ${pt.f+1} / ${pt.v}%`;
+  };
+  const endDrag=e=>{
+    if(!curveDrag) return;
+    curveDrag=null;
+    const hint=el('curveHint');
+    if(hint) hint.textContent='クリックで点を追加、ドラッグで移動、右クリック（またはダブルクリック）で削除。横軸がコマ、縦軸が不透明度です。';
+    curveCommit(L);
+  };
+  cv.onpointerup=endDrag; cv.onpointercancel=endDrag;
+  cv.ondblclick=e=>{
+    const g=curveGeom(cv), r=g.r;
+    const i=curveHit(L,g,e.clientX-r.left,e.clientY-r.top);
+    if(i<0) return;
+    const pts=curveOf(L);
+    if(pts.length<=1) return;
+    pts.splice(i,1); L.curve=pts; curveSel=-1;
+    curveCommit(L,'点を削除しました');
+  };
+  cv.onkeydown=e=>{
+    if((e.key==='Delete'||e.key==='Backspace')&&curveSel>=0){
+      const pts=curveOf(L);
+      if(pts.length<=1) return;
+      pts.splice(curveSel,1); L.curve=pts; curveSel=-1;
+      curveCommit(L,'点を削除しました'); e.preventDefault();
+    }
+  };
+}
+
+/* ============ タイムライン ============ */
+let thumbTimer=null;
+function scheduleThumbs(){ clearTimeout(thumbTimer); thumbTimer=setTimeout(drawThumbs,180); }
+/* タイムラインは「合成結果の行＋レイヤーごとの行」を縦に積む。
+   組み立て直しは構造が変わったときだけにする。毎回作り直すと、
+   数値入力→ボタンという操作で、blur→change→再構築が挟まって
+   押したはずのボタンが差し替わり、最初のクリックが落ちるため。 */
+function tlKey(){ return D.frames.length+'|'+D.layers.map(l=>l.id).join(','); }
+function compChips(){ const r=tlScroll.querySelector('.tk[data-role="comp"] .tk-cells'); return r?r.children:[]; }
+
+function rebuildTimeline(force){
+  if(!force&&tlScroll.dataset.key===tlKey()){
+    refreshChipLabels(); refreshChipClasses(); drawThumbs(); syncSelCount(); return;
+  }
+  tlScroll.dataset.key=tlKey();
+  tlScroll.innerHTML='';
+  if(!D.frames.length){ syncSelCount(); return; }
+
+  /* 1行目：合成結果 */
+  const comp=document.createElement('div');
+  comp.className='tk'; comp.dataset.role='comp';
+  const cn=document.createElement('div');
+  cn.className='tk-name head';
+  cn.innerHTML='<div class="n">合成結果</div><div class="s" id="tkCount"></div>';
+  const cc=document.createElement('div'); cc.className='tk-cells';
+  D.frames.forEach((f,i)=>{
+    const chip=document.createElement('button');
+    chip.type='button'; chip.dataset.i=i;
+    chip.className='fchip'+(D.sel.has(i)?' sel':'')+(i===D.cur?' cur':'')+(hasOv(f)?' ov':'');
+    const c=document.createElement('canvas'); c.width=52; c.height=40;
+    const lbl=document.createElement('div'); lbl.className='lbl';
+    lbl.innerHTML=`<span>${i+1}</span><span>${f.delay}</span>`;
+    chip.append(c,lbl);
+    chip.addEventListener('click',ev=>onChipClick(i,ev));
+    cc.appendChild(chip);
+  });
+  comp.append(cn,cc); tlScroll.appendChild(comp);
+
+  /* 2行目以降：レイヤー。レイヤーパネルは上に行くほど手前なので（column-reverse）、
+     ここも手前のレイヤーを上に出して、パネルと上下の並びを一致させる。 */
+  [...D.layers].reverse().forEach(L=>{
+    const row=document.createElement('div');
+    row.className='tk'; row.dataset.layer=L.id;
+    const nm=document.createElement('button');
+    nm.type='button';
+    nm.className='tk-name'+(L.id===D.activeLayer?' active':'')+(L.visible?'':' hidden');
+    nm.innerHTML=`<div class="n">${escapeHtml(L.name)}</div><div class="s"></div>`;
+    nm.addEventListener('click',()=>{ D.activeLayer=L.id; rebuildLayers(); buildLayerEditor(); refreshChipClasses(); });
+    const cells=document.createElement('div'); cells.className='tk-cells';
+    D.frames.forEach((f,i)=>{
+      const cell=document.createElement('button');
+      cell.type='button'; cell.dataset.i=i;
+      cell.className='lchip';
+      const c=document.createElement('canvas'); c.width=52; c.height=26;
+      const bar=document.createElement('div'); bar.className='a';
+      cell.append(c,bar);
+      /* レイヤーの行を押したときは、そのレイヤーを編集対象にしてからコマを選ぶ */
+      cell.addEventListener('click',ev=>{
+        if(D.activeLayer!==L.id){ D.activeLayer=L.id; rebuildLayers(); buildLayerEditor(); }
+        onChipClick(i,ev);
+      });
+      cells.appendChild(cell);
+    });
+    row.append(nm,cells); tlScroll.appendChild(row);
+  });
+  drawThumbs(); syncSelCount();
+}
+
+function drawThumbs(){
+  if(!D.W||!D.H) return;
+  /* 合成結果の行：1コマずつ合成して縮小する */
+  const chips=compChips();
+  if(chips.length){
+    const tw=52,th=40, s=Math.min(tw/D.W,th/D.H), dw=D.W*s, dh=D.H*s;
+    const tmp=document.createElement('canvas'); tmp.width=D.W; tmp.height=D.H;
+    const t2=tmp.getContext('2d');
+    for(let i=0;i<chips.length;i++){
+      compositeTo(t2,i,D.W,D.H);
+      const c2=chips[i].querySelector('canvas').getContext('2d');
+      c2.clearRect(0,0,tw,th);
+      c2.drawImage(tmp,(tw-dw)/2,(th-dh)/2,dw,dh);
+    }
+  }
+  /* レイヤーの行：元のキャンバスを縮小するだけ。合成をやり直さないので軽い。
+     フェード中はその不透明度で描くので、効き具合が時間軸の形として見える。 */
+  D.layers.forEach(L=>{
+    const row=tlScroll.querySelector(`.tk[data-layer="${L.id}"]`);
+    if(!row) return;
+    const cells=row.querySelector('.tk-cells').children;
+    const tw=52,th=26, s=Math.min(tw/L.w,th/L.h), dw=L.w*s, dh=L.h*s;
+    let sum=0;
+    for(let i=0;i<cells.length;i++){
+      const f=D.frames[i]; if(!f) continue;
+      const a=L.visible?fadeAlpha(L,i):0;
+      const g=cells[i].querySelector('canvas').getContext('2d');
+      g.clearRect(0,0,tw,th);
+      const src=L.canvases[mapFrame(L,f.t)];
+      if(src){ g.globalAlpha=Math.max(a,0.05); g.drawImage(src,(tw-dw)/2,(th-dh)/2,dw,dh); g.globalAlpha=1; }
+      cells[i].classList.toggle('out',a<=0);
+      const bar=cells[i].querySelector('.a');
+      if(bar){ bar.style.width=(a*100)+'%'; bar.style.opacity=a>0?1:0; }
+      if(a>0) sum++;
+    }
+    const st=row.querySelector('.tk-name .s');
+    if(st) st.textContent=`${sum}/${cells.length}コマ`;
+  });
+}
+function refreshChipLabels(){
+  [...compChips()].forEach((chip,i)=>{
+    const lbl=chip.querySelector('.lbl');
+    if(lbl&&D.frames[i]) lbl.innerHTML=`<span>${i+1}</span><span>${D.frames[i].delay}</span>`;
+  });
+}
+function refreshChipClasses(){
+  [...compChips()].forEach((chip,i)=>{
+    chip.classList.toggle('sel',D.sel.has(i));
+    chip.classList.toggle('cur',i===D.cur);
+    chip.classList.toggle('ov',hasOv(D.frames[i]));
+  });
+  D.layers.forEach(L=>{
+    const row=tlScroll.querySelector(`.tk[data-layer="${L.id}"]`);
+    if(!row) return;
+    const nm=row.querySelector('.tk-name');
+    nm.classList.toggle('active',L.id===D.activeLayer);
+    nm.classList.toggle('hidden',!L.visible);
+    [...row.querySelector('.tk-cells').children].forEach((cell,i)=>{
+      cell.classList.toggle('sel',D.sel.has(i));
+      cell.classList.toggle('cur',i===D.cur);
+    });
+  });
+}
+function onChipClick(i,ev){
+  if(ev.shiftKey){
+    const a=Math.min(D.anchor,i),b=Math.max(D.anchor,i);
+    D.sel.clear(); for(let k=a;k<=b;k++) D.sel.add(k);
+  }else if(ev.ctrlKey||ev.metaKey){
+    if(D.sel.has(i)) D.sel.delete(i); else D.sel.add(i);
+    D.anchor=i;
+  }else{
+    D.sel.clear(); D.sel.add(i); D.anchor=i;
+    pausePlayback(); setFrame(i);
+  }
+  refreshChipClasses(); syncSelCount();
+  const L=activeLayer(); if(L) syncLayerEditor(L);
+}
+function syncSelCount(){
+  const n=D.sel.size;
+  selCount.innerHTML=n?`<b>${n}</b> コマ選択中 / 全 ${D.frames.length}`:`全 ${D.frames.length} コマ`;
+  ['btnApplyDelay','btnApplySpeed','btnDupFrames','btnDelFrames','btnMoveL','btnMoveR','btnReverse']
+    .forEach(id=>el(id).disabled=!n);
+}
+el('btnSelAll').addEventListener('click',()=>{
+  D.sel=new Set(D.frames.map((_,i)=>i)); D.anchor=0;
+  refreshChipClasses(); syncSelCount(); const L=activeLayer(); if(L) syncLayerEditor(L);
+});
+el('btnSelNone').addEventListener('click',()=>{
+  D.sel.clear(); refreshChipClasses(); syncSelCount(); const L=activeLayer(); if(L) syncLayerEditor(L);
+});
+el('btnApplyDelay').addEventListener('click',()=>{
+  const v=clampDelay(+el('bulkDelay').value||100);
+  selIdx().forEach(i=>D.frames[i].delay=v);
+  refreshChipLabels(); syncDocStats(); setFrame(D.cur);
+  toast(`${D.sel.size}コマの表示時間を${v}msにしました`);
+});
+el('btnApplySpeed').addEventListener('click',()=>{
+  const m=Math.max(0.1,Math.min(10,+el('bulkSpeed').value||1));
+  selIdx().forEach(i=>D.frames[i].delay=clampDelay(D.frames[i].delay/m));
+  refreshChipLabels(); syncDocStats(); setFrame(D.cur);
+  toast(`${D.sel.size}コマを${m}倍速にしました`);
+});
+el('btnDupFrames').addEventListener('click',()=>{
+  const idx=selIdx(); if(!idx.length) return;
+  for(let k=idx.length-1;k>=0;k--){
+    const f=D.frames[idx[k]];
+    D.frames.splice(idx[k]+1,0,{delay:f.delay,t:f.t,ov:cloneOv(f.ov)});
+  }
+  D.sel.clear(); rebuildAll(true); toast(`${idx.length}コマを複製しました`);
+});
+el('btnDelFrames').addEventListener('click',()=>{
+  const idx=selIdx(); if(!idx.length) return;
+  if(idx.length>=D.frames.length) return toast('すべてのコマは削除できません');
+  D.frames=D.frames.filter((_,i)=>!D.sel.has(i));
+  D.cur=Math.min(D.cur,D.frames.length-1); D.sel.clear();
+  rebuildAll(true); toast(`${idx.length}コマを削除しました`);
+});
+function moveSelection(dir){
+  const idx=selIdx(); if(!idx.length) return;
+  const order=dir<0?idx:[...idx].reverse();
+  const ns=new Set();
+  for(const i of order){
+    const j=i+dir;
+    if(j<0||j>=D.frames.length){ ns.add(i); continue; }
+    if(D.sel.has(j)&&!ns.has(j)){ ns.add(i); continue; }
+    const tmp=D.frames[j]; D.frames[j]=D.frames[i]; D.frames[i]=tmp;
+    ns.add(j);
+  }
+  D.sel=ns; rebuildAll();
+}
+el('btnMoveL').addEventListener('click',()=>moveSelection(-1));
+el('btnMoveR').addEventListener('click',()=>moveSelection(1));
+el('btnReverse').addEventListener('click',()=>{
+  const idx=selIdx(); if(idx.length<2) return toast('2コマ以上を選んでください');
+  const picked=idx.map(i=>D.frames[i]).reverse();
+  idx.forEach((i,k)=>D.frames[i]=picked[k]);
+  rebuildAll(); toast(`${idx.length}コマを逆順にしました`);
+});
+
+/* ============ ドキュメント ============ */
+function syncDocInputs(){ el('docW').value=D.W; el('docH').value=D.H; el('docLoop').value=D.loop; }
+function syncDocStats(){
+  const tot=totalMs(), n=D.frames.length;
+  el('timeTotal').textContent=fmtSec(tot);
+  if(document.activeElement!==el('docDur')) el('docDur').value=n?(tot/1000).toFixed(2):'';
+  el('docDur').title=n
+    ? `「合わせる」は緩急の比率を保ったまま全体を伸縮、「均等割り」は全コマを同じ長さに揃えます。この${n}コマで指定できる範囲は ${fmtSec(n*DELAY_MIN)} 〜 ${fmtSec(n*DELAY_MAX)} です。`
+    : '';
+  frameTotal.textContent=n; scrub.max=Math.max(0,n-1);
+  exportNote.textContent=n?`${n}コマ / 生データ約 ${fmtBytes(D.W*D.H*4*n)}`:'';
+  /* 速さは「秒あたり何コマか」で見せる。表示時間がばらついていればそれも示す。 */
+  const fi=fpsInfo(), box=el('fpsBox'), val=el('fpsVal'), tf=el('tlFps');
+  if(val) val.textContent=fi.fps?(fi.fps>=10?fi.fps.toFixed(1):fi.fps.toFixed(2)):'—';
+  if(box){
+    box.classList.toggle('uneven',!!n&&!fi.even);
+    box.title=n
+      ? (fi.even
+          ? `1コマ ${Math.round(fi.ms)}ms の等間隔で、1秒あたり ${fi.fps.toFixed(1)} コマです`
+          : `コマごとの表示時間がばらついています。平均すると1コマ ${Math.round(fi.ms)}ms（${fi.fps.toFixed(1)} コマ/秒）です`)
+      : '';
+  }
+  if(tf) tf.textContent=n?`${fpsLabel()}　1コマ ${Math.round(fi.ms)}ms`:'';
+  const many=n>1;
+  [btnPrev,btnPlay,btnNext,btnRepeat,scrub].forEach(b=>b.disabled=!many);
+  [...speedEl.children].forEach(b=>b.disabled=!many);
+}
+el('docW').addEventListener('change',e=>{D.W=Math.max(1,Math.min(4096,+e.target.value||1));e.target.value=D.W;rebuildAll()});
+el('docH').addEventListener('change',e=>{D.H=Math.max(1,Math.min(4096,+e.target.value||1));e.target.value=D.H;rebuildAll()});
+el('docLoop').addEventListener('change',e=>{D.loop=Math.max(0,Math.min(9999,+e.target.value||0));e.target.value=D.loop});
+el('btnFitCanvas').addEventListener('click',()=>{
+  if(!D.layers.length) return;
+  let w=0,h=0;
+  D.frames.forEach(f=>D.layers.forEach(L=>{
+    const p=effProps(L,f);
+    w=Math.max(w,p.x+p.dw); h=Math.max(h,p.y+p.dh);
+  }));
+  D.W=Math.max(1,Math.min(4096,Math.ceil(w))); D.H=Math.max(1,Math.min(4096,Math.ceil(h)));
+  syncDocInputs(); rebuildAll(); toast(`キャンバスを ${D.W}×${D.H} にしました`);
+});
+function setTotalDuration(targetMs,even){
+  const n=D.frames.length; if(!n) return null;
+  const lo=n*DELAY_MIN, hi=n*DELAY_MAX;
+  let target=Math.round(targetMs), clamped=false;
+  if(target<lo){target=lo;clamped=true}
+  if(target>hi){target=hi;clamped=true}
+  let vals;
+  if(even){
+    const base=Math.floor(target/n), rem=target-base*n;
+    vals=Array.from({length:n},(_,i)=>clampDelay(base+(i<rem?1:0)));
+  }else{
+    const scale=target/(totalMs()||lo);
+    vals=D.frames.map(f=>clampDelay(f.delay*scale));
+  }
+  let diff=target-vals.reduce((a,b)=>a+b,0), pass=0;
+  while(diff!==0&&pass++<64){
+    let moved=false;
+    for(let i=0;i<n&&diff!==0;i++){
+      const st=diff>0?1:-1, nv=vals[i]+st;
+      if(nv<DELAY_MIN||nv>DELAY_MAX) continue;
+      vals[i]=nv; diff-=st; moved=true;
+    }
+    if(!moved) break;
+  }
+  D.frames.forEach((f,i)=>f.delay=vals[i]);
+  return {total:totalMs(),clamped};
+}
+function runDuration(even){
+  if(!D.frames.length) return;
+  const secs=parseFloat(el('docDur').value);
+  if(!isFinite(secs)||secs<=0) return toast('全体の長さを秒で入力してください');
+  const r=setTotalDuration(secs*1000,even);
+  refreshChipLabels(); syncDocStats(); setFrame(D.cur);
+  toast(r.clamped?`範囲に収めた結果、全体は ${fmtSec(r.total)} になりました`:`全体を ${fmtSec(r.total)} にしました`);
+}
+el('btnApplyDur').addEventListener('click',()=>runDuration(false));
+el('btnEvenDur').addEventListener('click',()=>runDuration(true));
+el('docDur').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();runDuration(false)}});
+
+/* ============ 再生 ============ */
+function stopPlayback(){ if(D.rafId) cancelAnimationFrame(D.rafId); D.rafId=null; D.playing=false; btnPlay.textContent='▶'; }
+function pausePlayback(){ if(D.playing) stopPlayback(); }
+function startPlayback(){
+  if(D.frames.length<=1) return;
+  if(!D.repeat&&D.cur>=D.frames.length-1) setFrame(0);
+  D.playing=true; D.lastT=performance.now(); D.acc=0; btnPlay.textContent='❚❚'; step();
+}
+function step(){
+  if(!D.playing) return;
+  D.rafId=requestAnimationFrame(now=>{
+    if(!D.playing) return;
+    D.acc+=(now-D.lastT)*D.speed; D.lastT=now;
+    let guard=0;
+    while(D.frames.length&&D.acc>=Math.max(16,D.frames[D.cur].delay)&&guard++<600){
+      D.acc-=Math.max(16,D.frames[D.cur].delay);
+      if(D.cur+1>=D.frames.length){
+        if(!D.repeat){ setFrame(D.frames.length-1); stopPlayback(); return; }
+        setFrame(0);
+      }else setFrame(D.cur+1);
+    }
+    step();
+  });
+}
+function setFrame(i){
+  const n=D.frames.length; if(!n) return;
+  D.cur=((i%n)+n)%n;
+  frameNow.textContent=D.cur; scrub.value=D.cur;
+  timeNow.textContent=fmtSec(D.frames.slice(0,D.cur).reduce((a,f)=>a+f.delay,0));
+  renderStage(); refreshChipClasses();
+  if(el('fdCurve')&&activeLayer()){ drawCurve(); syncCurveNote(activeLayer()); }
+  const chip=compChips()[D.cur];
+  if(chip&&!D.playing) chip.scrollIntoView({block:'nearest',inline:'nearest'});
+  if(editScope==='sel'){ const L=activeLayer(); if(L) syncLayerEditor(L); }
+}
+btnPlay.addEventListener('click',()=>{D.playing?stopPlayback():startPlayback()});
+btnPrev.addEventListener('click',()=>{pausePlayback();setFrame(D.cur-1)});
+btnNext.addEventListener('click',()=>{pausePlayback();setFrame(D.cur+1)});
+btnRepeat.addEventListener('click',()=>{
+  D.repeat=!D.repeat;
+  btnRepeat.setAttribute('aria-pressed',String(D.repeat));
+  btnRepeat.title=D.repeat?'リピート再生：オン':'リピート再生：オフ（最後のコマで停止）';
+  toast(D.repeat?'リピート再生：オン':'リピート再生：オフ（最後のコマで停止します）');
+});
+scrub.addEventListener('input',e=>{pausePlayback();setFrame(parseInt(e.target.value,10))});
+[...speedEl.children].forEach(b=>b.addEventListener('click',()=>{
+  D.speed=parseFloat(b.dataset.v);
+  [...speedEl.children].forEach(c=>c.setAttribute('aria-pressed',String(c===b)));
+}));
+
+function rebuildAll(force){
+  syncDocStats(); rebuildLayers(); rebuildTimeline(force);
+  setFrame(Math.min(D.cur,Math.max(0,D.frames.length-1)));
+}
+
+/* ============ ファイル入力 ============ */
+drop.addEventListener('click',()=>fileInput.click());
+fileInput.addEventListener('change',e=>{if(e.target.files.length) addFiles([...e.target.files]); e.target.value='';});
+['dragenter','dragover'].forEach(ev=>document.addEventListener(ev,e=>{e.preventDefault();shell.classList.add('drag')}));
+document.addEventListener('dragleave',e=>{if(!e.relatedTarget) shell.classList.remove('drag')});
+document.addEventListener('drop',e=>{
+  e.preventDefault(); shell.classList.remove('drag');
+  if(e.dataTransfer.files.length) addFiles([...e.dataTransfer.files]);
+});
+
+/* ============ 書き出し ============ */
+/* 保存経路は2つ。claude.ai で公開されたページはサンドボックスが <a download> を
+   一律で無効化するので downloads ケーパビリティ経由で保存する。
+   ローカルのHTMLとして開いた場合はケーパビリティが無いので通常のダウンロードに落とす。 */
+const DL_MAX=16*1024*1024;
+let dlPromise=null;
+function downloadsCap(){
+  if(!dlPromise){
+    dlPromise=(window.claude&&typeof window.claude.use==='function')
+      ? Promise.resolve(window.claude.use('downloads')).catch(()=>null)
+      : Promise.resolve(null);
+  }
+  return dlPromise;
+}
+downloadsCap();   // 起動時に先に解決させ、書き出し時に待たせない
+
+function saveDirect(blob,name){
+  const url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1500);
+}
+/* 公開されたページかどうか。ここでは <a download> が働かないため案内を出し分ける */
+const inSandbox=()=>!!(window.claude&&typeof window.claude.use==='function');
+let DL_OK=true;
+downloadsCap().then(d=>{ DL_OK=!!d||!inSandbox(); });
+const saveHintImg=()=>DL_OK
+  ? '保存が始まらない場合は、下のボタンか、画像を長押し／右クリックして「画像を保存」を選んでください。'
+  : 'この画面ではボタンからの保存ができません。上の画像を長押し／右クリックして「画像を保存」を選んでください。';
+
+/* 結果オーバーレイ：保存が塞がれた環境でも画像そのものから保存できるようにする */
+function showOverlay({title,note,imgSrc,dlHref,dlName}){
+  el('ovTitle').textContent=title;
+  el('ovNote').textContent=note||'';
+  const im=el('ovImg');
+  im.style.display=imgSrc?'block':'none'; if(imgSrc) im.src=imgSrc;
+  const a=el('ovDl');
+  if(dlHref&&DL_OK){ a.style.display=''; a.href=dlHref; a.setAttribute('download',dlName); }
+  else a.style.display='none';
+  el('ov').classList.add('on');
+}
+
+async function saveBlob(blob,name){
+  const dl=await downloadsCap();
+  if(!dl){
+    saveDirect(blob,name);
+    if(inSandbox()) return false;          // 実行はしたが成功したとは限らない
+    toast(`${name} を保存しました`); return true;
+  }
+  if(blob.size>DL_MAX){
+    showError(`ファイルが ${fmtBytes(blob.size)} あり、この画面から保存できる上限（16MB）を超えています。\n`
+      +`キャンバスを小さくするか、コマ数を減らしてから書き出し直してください。`);
+    toast('サイズが大きすぎて保存できませんでした');
+    return false;
+  }
+  try{
+    await dl.save({filename:name,data:blob});
+    toast(`${name} を保存しました`);
+    return true;
+  }catch(e){
+    const code=e&&e.code;
+    if(code==='declined'){ toast('保存を取り消しました'); return false; }
+    if(code==='rate_limited'){ toast('保存の確認中です。少し待ってからもう一度どうぞ'); return false; }
+    if(code==='too_large'){ toast('サイズが大きすぎて保存できませんでした'); return false; }
+    saveDirect(blob,name);   // 想定外の失敗は通常のダウンロードで拾う
+    toast('保存を試みました');
+    return true;
+  }
+}
+function baseName(){ const L=D.layers[0]; return L?L.name.replace(/\.[^.]+$/,''):'apng-scope'; }
+/* ============ 5MB以下に収める圧縮 ============
+   PNGは非可逆圧縮を持たないので、削れるのは「色数」と「画素数」だけ。
+   減色は絵によっては逆効果（ディザのノイズで増える）なので毎回両方試して小さい方を採り、
+   それでも超える場合だけ解像度を落とす。大きさは画素数にほぼ比例するので
+   1回の見積もりでだいたい収まり、最大3回まで詰める。 */
+const SIZE_TARGET=5*1024*1024;
+const tick=()=>new Promise(r=>setTimeout(r,0));
+
+async function buildFrameBuffers(scale,status){
+  const W=Math.max(1,Math.round(D.W*scale)), H=Math.max(1,Math.round(D.H*scale));
+  const c=document.createElement('canvas'); c.width=W; c.height=H;
+  const g=c.getContext('2d',{willReadFrequently:true});
+  g.imageSmoothingEnabled=true; g.imageSmoothingQuality='high';
+  const bufs=[],dels=[];
+  for(let i=0;i<D.frames.length;i++){
+    if(status&&(i%4===0||i===D.frames.length-1)){ status(`合成中 ${W}×${H} … ${i+1}/${D.frames.length}`); await tick(); }
+    compositeTo(g,i,W,H,scale);
+    bufs.push(g.getImageData(0,0,W,H).data.buffer);
+    dels.push(Math.max(DELAY_MIN,D.frames[i].delay));
+  }
+  return {bufs,dels,W,H};
+}
+/* ---- 減色前のディザ ----
+   滑らかなグラデーションを256色に落とすと等高線状の帯が出るので、
+   量子化の直前に4×4の順序ディザで半階調ぶんの揺らぎを混ぜて帯を分解する。 */
+const BAYER4=[0,8,2,10,12,4,14,6,3,11,1,9,15,7,13,5];
+function ditherBuf(buf,w,h,amp){
+  const src=new Uint8Array(buf), d=new Uint8ClampedArray(src);
+  for(let y=0;y<h;y++){
+    const by=(y&3)<<2;
+    for(let x=0;x<w;x++){
+      const i=(y*w+x)<<2;
+      if(src[i+3]===0) continue;
+      const o=(BAYER4[by|(x&3)]/16-.46875)*amp;
+      d[i]=src[i]+o; d[i+1]=src[i+1]+o; d[i+2]=src[i+2]+o;
+    }
+  }
+  return d.buffer;
+}
+function encodeFrames(fr,ps){
+  const bufs=ps?fr.bufs.map(b=>ditherBuf(b,fr.W,fr.H,5)):fr.bufs;
+  return UPNG.encode(bufs,fr.W,fr.H,ps,fr.dels,ps===0);
+}
+
+async function encodeApng(status,fitTarget){
+  const finish=(buf,W,H,note)=>{
+    let out=buf;
+    if(D.frames.length>1&&D.loop>0) out=setNumPlays(out,D.loop);
+    return {blob:new Blob([out],{type:'image/png'}),W,H,note};
+  };
+  /* 減色は最後の手段。まず色をそのままに解像度だけ下げ、
+     下限（元の60%）まで下げても収まらないときに初めて減色する。 */
+  const FLOOR=0.6;
+  let fr=await buildFrameBuffers(1,status);
+  status('圧縮中…'); await tick();
+  let out=encodeFrames(fr,0);
+  if(!fitTarget||out.byteLength<=SIZE_TARGET)
+    return finish(out,fr.W,fr.H,fitTarget?'':'圧縮なし');
+
+  /* 1段目：可逆のまま縮小。下限まで下げても届かないと分かるときは飛ばす */
+  if(out.byteLength*FLOOR*FLOOR*0.9<=SIZE_TARGET){
+    let scale=1;
+    for(let k=0;k<3&&scale>FLOOR;k++){
+      scale=Math.max(FLOOR, scale*Math.sqrt(SIZE_TARGET/out.byteLength)*0.88);
+      fr=await buildFrameBuffers(scale,status);
+      status(`圧縮中 ${fr.W}×${fr.H}…`); await tick();
+      out=encodeFrames(fr,0);
+      if(out.byteLength<=SIZE_TARGET)
+        return finish(out,fr.W,fr.H,`解像度 ${fr.W}×${fr.H}（${Math.round(scale*100)}%）・減色なし`);
+    }
+  }
+
+  /* 2段目：ここで初めて減色する。解像度は元に戻してからやり直す */
+  fr=await buildFrameBuffers(1,status);
+  status('減色して圧縮中…'); await tick();
+  out=encodeFrames(fr,256);
+  if(out.byteLength<=SIZE_TARGET) return finish(out,fr.W,fr.H,'256色に減色');
+
+  let scale=1, last={out,fr};
+  for(let k=0;k<3;k++){
+    scale=Math.max(0.12, scale*Math.sqrt(SIZE_TARGET/out.byteLength)*0.88);
+    fr=await buildFrameBuffers(scale,status);
+    status(`圧縮中 ${fr.W}×${fr.H}…`); await tick();
+    out=encodeFrames(fr,256);
+    last={out,fr};
+    if(out.byteLength<=SIZE_TARGET)
+      return finish(out,fr.W,fr.H,`解像度 ${fr.W}×${fr.H}（${Math.round(scale*100)}%）・256色に減色`);
+    if(scale<=0.12) break;
+  }
+  return finish(last.out,last.fr.W,last.fr.H,
+    `解像度 ${last.fr.W}×${last.fr.H}・256色に減色（これ以上は縮められませんでした）`);
+}
+
+el('btnExportApng').addEventListener('click',async()=>{
+  const btn=el('btnExportApng'), label=btn.textContent;
+  if(!D.frames.length) return;
+  pausePlayback(); btn.disabled=true; clearError();
+  try{
+    const fit=el('optFit5').checked;
+    const r=await encodeApng(s=>{btn.textContent=s;},fit);
+    btn.textContent='保存中…'; await tick();
+    const nm=`${baseName()}-edit.png`;
+    const ok=await saveBlob(r.blob,nm);
+    /* 保存が塞がれる環境でも必ず受け取れるよう、書き出した画像を画面に出す */
+    const url=URL.createObjectURL(r.blob);
+    showOverlay({
+      title:'アニメーションPNGを書き出しました',
+      note:`${D.W}×${D.H} / ${D.frames.length}コマ / ${fmtBytes(r.blob.size)}`
+        +(r.note?`（${r.note}）`:'')+'。'+saveHintImg(),
+      imgSrc:url, dlHref:url, dlName:nm
+    });
+    if(ok&&r.note) toast(`${fmtBytes(r.blob.size)} で保存 — ${r.note}`);
+  }catch(e){
+    console.error(e); showError('APNGの書き出しに失敗しました: '+(e&&e.message||e)); toast('書き出しに失敗しました');
+  }finally{ btn.textContent=label; btn.disabled=false; }
+});
+
+el('btnExportPng').addEventListener('click',async()=>{
+  const btn=el('btnExportPng'), label=btn.textContent;
+  btn.disabled=true; clearError();
+  try{
+    const fit=el('optFit5').checked;
+    let scale=1, blob=null, note='';
+    for(let k=0;k<4;k++){
+      const W=Math.max(1,Math.round(D.W*scale)), H=Math.max(1,Math.round(D.H*scale));
+      const c=document.createElement('canvas'); c.width=W; c.height=H;
+      const g=c.getContext('2d'); g.imageSmoothingEnabled=true; g.imageSmoothingQuality='high';
+      compositeTo(g,D.cur,W,H,scale);
+      blob=await new Promise(res=>c.toBlob(res,'image/png'));
+      if(!blob) throw new Error('画像を作れませんでした');
+      if(!fit||blob.size<=SIZE_TARGET){ if(scale<1) note=`解像度 ${W}×${H}（${Math.round(scale*100)}%）`; break; }
+      scale=Math.max(0.12,scale*Math.sqrt(SIZE_TARGET/blob.size)*0.93);
+      btn.textContent='圧縮中…'; await tick();
+    }
+    btn.textContent='保存中…'; await tick();
+    const nm=`${baseName()}-frame${D.cur}.png`;
+    const ok=await saveBlob(blob,nm);
+    const url=URL.createObjectURL(blob);
+    showOverlay({
+      title:`PNGを書き出しました（コマ ${D.cur+1}）`,
+      note:`${fmtBytes(blob.size)}`+(note?`（${note}）`:'')+'。'+saveHintImg(),
+      imgSrc:url, dlHref:url, dlName:nm
+    });
+    if(ok&&note) toast(`${fmtBytes(blob.size)} で保存 — ${note}`);
+  }catch(e){
+    console.error(e); showError('PNGの保存に失敗しました: '+(e&&e.message||e)); toast('保存に失敗しました');
+  }finally{ btn.textContent=label; btn.disabled=false; }
+});
+/* UPNGはnum_playsを常に0で書くので、acTLを直接書き換えてループ回数を反映する */
+function setNumPlays(arrbuf,plays){
+  const d=new Uint8Array(arrbuf), dv=new DataView(d.buffer);
+  let off=8;
+  while(off+8<=d.length){
+    const len=dv.getUint32(off);
+    const type=String.fromCharCode(d[off+4],d[off+5],d[off+6],d[off+7]);
+    if(type==='acTL'){
+      dv.setUint32(off+12,plays>>>0);
+      dv.setUint32(off+8+len,crc32(d,off+4,4+len));
+      break;
+    }
+    if(type==='IDAT'||type==='IEND') break;
+    off+=12+len;
+  }
+  return d.buffer;
+}
+const CRC_TABLE=(()=>{const t=new Uint32Array(256);
+  for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1);t[n]=c>>>0}
+  return t})();
+function crc32(buf,off,len){
+  let c=0xFFFFFFFF;
+  for(let i=0;i<len;i++) c=CRC_TABLE[(c^buf[off+i])&0xFF]^(c>>>8);
+  return (c^0xFFFFFFFF)>>>0;
+}
+
+el('ovClose').addEventListener('click',()=>el('ov').classList.remove('on'));
+el('ov').addEventListener('click',e=>{ if(e.target===el('ov')) el('ov').classList.remove('on'); });
+
+
+/* ============ 数値入力のホイール操作 ============
+   数値フォームの上でホイールを回すと1段階、Shiftを押しながらだと10段階まとめて動く。
+   段の大きさは各入力の step をそのまま使うので、px入力なら1px/10px、
+   秒の入力（step=0.05）なら0.05秒/0.5秒になる。
+   スライダーは パネル のスクロール中に触れてしまうため、選択（クリック）している間だけ効かせる。 */
+function wheelStep(el,dir,big){
+  const st=parseFloat(el.step)||1, s=big?st*10:st;
+  const min=el.min!==''?parseFloat(el.min):-Infinity;
+  const max=el.max!==''?parseFloat(el.max):Infinity;
+  const cur=parseFloat(el.value);
+  const base=isNaN(cur)?(isFinite(min)?min:0):cur;
+  let v=Math.round((base+dir*s)/s)*s;
+  v=Math.min(max,Math.max(min,v));
+  const dec=(String(st).split('.')[1]||'').length;
+  el.value=dec?v.toFixed(dec):String(Math.round(v));
+  el.dispatchEvent(new Event('input',{bubbles:true}));
+  el.dispatchEvent(new Event('change',{bubbles:true}));
+}
+function bindWheel(el){
+  if(el.dataset.wh) return; el.dataset.wh='1';
+  el.addEventListener('wheel',e=>{
+    if(el.disabled||el.readOnly) return;
+    if(el.type==='range'&&document.activeElement!==el) return;   // スライダーは選択中のみ
+    e.preventDefault();
+    wheelStep(el,e.deltaY<0?1:-1,e.shiftKey);
+  },{passive:false});
+  const hint=el.type==='range'?'選択中はホイールで増減（Shiftで10段階）':'ホイールで増減、Shift+ホイールで10段階';
+  el.title=el.title?el.title+' / '+hint:hint;
+}
+function bindWheels(root){
+  const r=root||document;
+  if(r.matches&&r.matches('input[type=number],input[type=range]')) return bindWheel(r);
+  (r.querySelectorAll?r.querySelectorAll('input[type=number],input[type=range]'):[]).forEach(bindWheel);
+}
+bindWheels();
+/* 後から組み立て直される入力（スライダー群やレイヤー編集）にも自動で効かせる */
+new MutationObserver(ms=>{for(const m of ms)for(const n of m.addedNodes)if(n.nodeType===1)bindWheels(n)})
+  .observe(document.body,{childList:true,subtree:true});
+
+syncDocStats();
+</script>
