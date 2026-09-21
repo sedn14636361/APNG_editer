@@ -1,0 +1,6 @@
+# 検証の中間生成物
+__pycache__/
+*.pyc
+/out*.png
+/screenshots/
+/index.html

@@ -1,0 +1,48 @@
+# apng-scope.html をそのまま GitHub Pages へ公開する。
+# ビルド工程は無い。index.html はここで apng-scope.html から複製するだけで、
+# リポジトリには置かない（apng-scope.html を唯一の正に保つため）。
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 構文チェック
+        run: tools/syntax_check.sh
+
+      - name: 断片が本体と一致しているか確かめる
+        run: |
+          python3 tools/frag.py
+          git diff --exit-code -- as_artifact.html \
+            || { echo '::error::as_artifact.html が古い。python3 tools/frag.py を実行して commit すること'; exit 1; }
+
+      - name: Pages の入口を用意する
+        run: cp apng-scope.html index.html
+
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+      - id: deployment
+        uses: actions/deploy-pages@v4
