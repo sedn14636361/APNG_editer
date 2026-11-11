@@ -250,7 +250,7 @@ input[type=number]:focus,select:focus{border-color:var(--accent);outline:none}
 .genkinds{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
 .gencard #genNote{min-height:3.4em;margin-bottom:10px}
 .genopts{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px}
-.genopts .fld{flex:1 1 92px;min-width:0}
+.genopts .fld{flex:1 1 80px;min-width:0}
 .genopts input[type=number]{width:100%}
 #genProg{display:block;width:100%;height:4px;margin-bottom:12px;border:0;border-radius:2px;overflow:hidden;
   appearance:none;-webkit-appearance:none;background:var(--panel-3);visibility:hidden}
@@ -300,6 +300,7 @@ input[type=number]:focus,select:focus{border-color:var(--accent);outline:none}
       <label class="fld">コマ数<select id="genN">
         <option value="32">32</option><option value="48" selected>48</option><option value="64">64</option><option value="96">96</option>
       </select></label>
+      <label class="fld">色<select id="genTint"></select></label>
       <label class="fld" title="同じ種からは同じ絵ができます">乱数の種<input type="number" id="genSeed" min="0" max="999999" step="1"></label>
       <button class="btn sm" id="genDice" type="button">種を振り直す</button>
     </div>
@@ -383,7 +384,7 @@ input[type=number]:focus,select:focus{border-color:var(--accent);outline:none}
         <h3>レイヤー</h3>
         <div class="row">
           <button class="btn sm" id="btnAddLayer">画像を追加</button>
-          <button class="btn sm" id="btnGen" title="流体・反応拡散などのループ素材を計算で作り、レイヤーとして追加します">生成</button>
+          <button class="btn sm" id="btnGen" title="波紋・光のボケ・きらめき・雪のループ素材を計算で作り、レイヤーとして追加します">生成</button>
           <button class="btn sm danger" id="btnDelLayer">削除</button>
         </div>
       </div>
@@ -1371,12 +1372,14 @@ function afterAdd(){
 
 /* ============ 生成 ============
    手元に素材が無くても試せるよう、計算でループ素材を作ってレイヤーにする。
-   どれも背景は透明で、上下左右がつながり（タイル可能）、最後のコマから先頭へ継ぎ目なく戻る。
-     fluid : 非圧縮流体。Stam "Stable Fluids"(1999) の移流と、同 "A Simple Fluid Solver
-             based on the FFT"(2001) のフーリエ空間での射影。渦の保持は Fedkiw ら(2001)。
-     react : 反応拡散。Gray–Scott モデル（Pearson, Science 1993）。
-     curl  : カールノイズ。ポテンシャルの回転を速度場にするので発散が0（Bridson ら 2007）。
-     warp  : ドメインワープ。fBm の入力を fBm でずらす（Perlin 1985 / Quilez）。
+   どれも背景は透明な「光」の素材で、上下左右がつながり（タイル可能）、
+   最後のコマから先頭へ継ぎ目なく戻る。動きはすべて「1周で元に戻る式」で書いてあるので、
+   ループは近似ではなく厳密に閉じる。
+     ripple  : 水面の波紋。落ちた点から波の束が輪になって広がる。左上からの光の照り返しを描く
+     bokeh   : 光のボケ。ピントの外れた光の円が、ゆっくり揺れながら明滅する
+     sparkle : きらめき。十字の光条を持つ星がまたたく
+     snow    : 雪。奥行きごとに大きさと速さの違う粒が降る
+   色は乱数で決めない。濁った組み合わせが出るので、選んだ配色の中だけで振る。
    DOM には触らない。frames は非乗算の RGBA。tick(進み具合0〜1) を await するので、
    呼び出し側はそこで画面を更新したり、例外を投げて中断したりできる。 */
 const GEN=(()=>{
@@ -1386,41 +1389,15 @@ const GEN=(()=>{
   const wrap=(i,n)=>((i%n)+n)%n;
   function rng(seed){let a=seed>>>0;return()=>{a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);
     t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
-  function hsv(h,s,v){h=(h%1+1)%1*6;const i=Math.floor(h),f=h-i,p=v*(1-s),q=v*(1-s*f),t=v*(1-s*(1-f));
-    return i===0?[v,t,p]:i===1?[q,v,p]:i===2?[p,v,t]:i===3?[p,q,v]:i===4?[t,p,v]:[v,p,q]}
-  /* 色の節 [位置,r,g,b] を線形につなぐ */
-  function ramp(stops,t){t=clamp01(t);let i=1;while(i<stops.length-1&&t>stops[i][0])i++;
-    const a=stops[i-1],b=stops[i],u=clamp01((t-a[0])/(b[0]-a[0]||1));
-    return[a[1]+(b[1]-a[1])*u,a[2]+(b[2]-a[2])*u,a[3]+(b[3]-a[3])*u]}
-
-  /* 周期つきの3次元パーリンノイズ。px,py,pz は各軸の周期（整数）。
-     周期で格子を折り返すので、空間にも時間にも継ぎ目が出ない。 */
-  function mkNoise(rand){
-    const q=Array.from({length:256},(_,i)=>i), p=new Uint8Array(512);
-    for(let i=255;i>0;i--){const j=rand()*(i+1)|0,t=q[i];q[i]=q[j];q[j]=t}
-    for(let i=0;i<512;i++)p[i]=q[i&255];
-    const fade=t=>t*t*t*(t*(t*6-15)+10);
-    const grad=(h,x,y,z)=>{h&=15;const u=h<8?x:y,v=h<4?y:(h===12||h===14)?x:z;return((h&1)?-u:u)+((h&2)?-v:v)};
-    function noise(x,y,z,px,py,pz){
-      const xi=Math.floor(x),yi=Math.floor(y),zi=Math.floor(z),xf=x-xi,yf=y-yi,zf=z-zi;
-      const x0=wrap(xi,px),x1=(x0+1)%px,y0=wrap(yi,py),y1=(y0+1)%py,z0=wrap(zi,pz),z1=(z0+1)%pz;
-      const u=fade(xf),v=fade(yf),w=fade(zf);
-      const a0=p[p[x0]+y0],a1=p[p[x0]+y1],b0=p[p[x1]+y0],b1=p[p[x1]+y1];
-      const l=(a,b,t)=>a+(b-a)*t;
-      return l(l(l(grad(p[a0+z0],xf,yf,zf),grad(p[b0+z0],xf-1,yf,zf),u),
-                 l(grad(p[a1+z0],xf,yf-1,zf),grad(p[b1+z0],xf-1,yf-1,zf),u),v),
-               l(l(grad(p[a0+z1],xf,yf,zf-1),grad(p[b0+z1],xf-1,yf,zf-1),u),
-                 l(grad(p[a1+z1],xf,yf-1,zf-1),grad(p[b1+z1],xf-1,yf-1,zf-1),u),v),w);
-    }
-    /* 空間だけ倍々に細かくする。時間軸は周期を保つために倍にしない */
-    noise.fbm=(x,y,z,oct,px,py,pz)=>{let s=0,a=.5,f=1;
-      for(let o=0;o<oct;o++){s+=a*noise(x*f,y*f,z+o*7.31,px*f,py*f,pz);a*=.5;f*=2}return s};
-    return noise;
-  }
-
+  /* 配色。先頭が基調色で、後ろほど白に近い */
+  const TINTS={
+    white:{label:'白',c:[[1,1,1],[.92,.96,1]]},
+    ice:{label:'氷',c:[[.56,.80,1],[.80,.92,1],[1,1,1]]},
+    gold:{label:'金',c:[[1,.77,.42],[1,.90,.70],[1,1,1]]},
+    sakura:{label:'桜',c:[[1,.68,.79],[1,.86,.91],[1,1,1]]}
+  };
   /* 周期境界つきの双一次補間で g×g の場を w×h に引き伸ばす（タイル性を保つ） */
   function upsample(src,g,w,h,dst){
-    dst=dst||new Float32Array(w*h);
     for(let y=0;y<h;y++){
       const fy=(y+.5)/h*g-.5,y0=Math.floor(fy),ty=fy-y0,r0=wrap(y0,g)*g,r1=wrap(y0+1,g)*g;
       for(let x=0;x<w;x++){
@@ -1436,333 +1413,152 @@ const GEN=(()=>{
     if(a<=1/510){out[i]=out[i+1]=out[i+2]=out[i+3]=0;return}
     out[i]=255*clamp01(r/a)+.5;out[i+1]=255*clamp01(g/a)+.5;out[i+2]=255*clamp01(b/a)+.5;out[i+3]=255*clamp01(a)+.5;
   }
-  /* 周期を持たない計算をループにする。n+m コマ計算しておき、先頭 m コマに
-     「1周後の続き」を重ねて滑らかに入れ替える。get(i) は i コマ目の場を返す。 */
-  function xfadeWeight(i,m){const a=(i+1)/(m+1);return a*a*(3-2*a)}
-
-  /* ---------- ドメインワープ（オーロラ） ---------- */
-  async function warp(o,tick){
-    const{w,h,n}=o,nz=mkNoise(rng(o.seed)),g=Math.min(160,Math.max(w,h)),PX=3,PY=1,PZ=4;
-    const R=rng(o.seed^0x9E3779B9),hue=R(),off=Array.from({length:9},()=>R()*8);
-    const fa=new Float32Array(g*g),fb=new Float32Array(g*g),fc=new Float32Array(g*g);
-    const ua=new Float32Array(w*h),ub=new Float32Array(w*h),uc=new Float32Array(w*h);
-    const c1=hsv(hue+.44,.9,.9),c2=hsv(hue+.36,.75,1),c3=hsv(hue+.78,.7,1),c4=hsv(hue+.56,.8,1);
-    const frames=[];
-    for(let f=0;f<n;f++){
-      /* 時間は円周上の位置として入れる。1周すると同じ場所に戻るので、必ずループする */
-      const th=f/n*TAU,ax=.22*Math.cos(th),ay=.22*Math.sin(th),bx=.16*Math.cos(-th+1.3),by=.16*Math.sin(-th+1.3);
-      for(let y=0;y<g;y++)for(let x=0;x<g;x++){
-        const px=x/g*PX,py=y/g*PY;
-        /* 横に細かく縦に粗いので、垂れ幕のような縦長の形になる */
-        const qx=nz.fbm(px+ax,py+ay,off[0],3,PX,PY,PZ),qy=nz.fbm(px+ax,py+ay,off[1],3,PX,PY,PZ);
-        const rx=nz.fbm(px+1.6*qx+bx,py+1.6*qy+by,off[2],3,PX,PY,PZ),
-              ry=nz.fbm(px+1.6*qx+bx,py+1.6*qy+by,off[3],3,PX,PY,PZ);
-        const i=y*g+x;
-        fa[i]=nz.fbm(px+1.8*rx,py+1.8*ry,off[4],4,PX,PY,PZ); fb[i]=Math.hypot(qx,qy); fc[i]=ry;
+  /* 光の円をひとつ足し込む。cx,cy,R はピクセル。端をまたいだぶんは反対側に回す */
+  const GAUSS=d=>Math.exp(-d*d*4.5);
+  const DISC=d=>sstep(1,.86,d)*(.72+.28*d*d*d*d);     // レンズのボケ：平らな円で、縁がわずかに明るい
+  function splat(acc,w,h,cx,cy,R,col,amp,prof){
+    const x0=Math.floor(cx-R),x1=Math.ceil(cx+R),y0=Math.floor(cy-R),y1=Math.ceil(cy+R);
+    for(let y=y0;y<=y1;y++){
+      const dy=y+.5-cy,row=wrap(y,h)*w;
+      for(let x=x0;x<=x1;x++){
+        const dx=x+.5-cx,d=Math.sqrt(dx*dx+dy*dy)/R;if(d>=1)continue;
+        const m=prof(d)*amp,q=(row+wrap(x,w))*3;
+        acc[q]+=col[0]*m;acc[q+1]+=col[1]*m;acc[q+2]+=col[2]*m;
       }
-      upsample(fa,g,w,h,ua);upsample(fb,g,w,h,ub);upsample(fc,g,w,h,uc);
+    }
+  }
+  /* 足し込んだ光を画像にする。明るい所ほど不透明で、重なっても白飛びせずなだらかに頭打ちになる */
+  function develop(acc,w,h){
+    const out=new Uint8ClampedArray(w*h*4);
+    for(let i=0;i<w*h;i++){
+      const r=1-Math.exp(-acc[i*3]),g=1-Math.exp(-acc[i*3+1]),b=1-Math.exp(-acc[i*3+2]);
+      put(out,i*4,r,g,b,Math.max(r,g,b));
+    }
+    return out;
+  }
+
+  /* ---------- 水面の波紋 ---------- */
+  async function ripple(o,tick){
+    const{w,h,n}=o,R=rng(o.seed),C=o.tint,g=Math.min(256,Math.max(w,h)),N=g*g,M=5,drops=[];
+    /* 落ちる時刻を1周の中に均等にばらす。寿命はちょうど1周なので、消えた瞬間に同じ場所へまた落ちる */
+    for(let i=0;i<M;i++)drops.push({x:R(),y:R(),ph:(i+R()*.5)/M,amp:.65+.35*R()});
+    const lam=.06,rmax=.44,ht=new Float32Array(N),li=new Float32Array(N),uh=new Float32Array(w*h),ul=new Float32Array(w*h);
+    const base=C[0],frames=[];
+    for(let f=0;f<n;f++){
+      ht.fill(0);
+      for(const d of drops){
+        const a=(f/n+d.ph)%1,r=rmax*a,sg=.022+.03*a,A=d.amp*sstep(0,.05,a)*Math.pow(1-a,1.7);
+        if(A<.004)continue;
+        for(let y=0;y<g;y++){
+          let dy=(y+.5)/g-d.y;dy-=Math.round(dy);
+          for(let x=0;x<g;x++){
+            let dx=(x+.5)/g-d.x;dx-=Math.round(dx);
+            const q=Math.sqrt(dx*dx+dy*dy)-r;if(q>3*sg||q<-3*sg)continue;
+            ht[y*g+x]+=A*Math.cos(TAU*q/lam)*Math.exp(-q*q/(2*sg*sg));
+          }
+        }
+      }
+      /* 水面の傾きから、左上の光が照り返す側だけを明るくする */
+      const k=g*lam/TAU/2;
+      for(let y=0;y<g;y++)for(let x=0;x<g;x++)
+        li[y*g+x]=-((ht[y*g+wrap(x+1,g)]-ht[y*g+wrap(x-1,g)])+(ht[wrap(y+1,g)*g+x]-ht[wrap(y-1,g)*g+x]))*k;
+      upsample(ht,g,w,h,uh);upsample(li,g,w,h,ul);
       const out=new Uint8ClampedArray(w*h*4);
       for(let i=0;i<w*h;i++){
-        const t=.5+ua[i]*1.5, a=sstep(.38,.80,t)*.94;
-        const m1=sstep(.45,.95,t), m2=sstep(.10,.34,ub[i]), m3=sstep(.0,.22,uc[i]);
-        let r=c1[0]+(c2[0]-c1[0])*m1, gg=c1[1]+(c2[1]-c1[1])*m1, b=c1[2]+(c2[2]-c1[2])*m1;
-        r+=(c3[0]-r)*m2*.7; gg+=(c3[1]-gg)*m2*.7; b+=(c3[2]-b)*m2*.7;
-        r+=(c4[0]-r)*m3*.5; gg+=(c4[1]-gg)*m3*.5; b+=(c4[2]-b)*m3*.5;
-        const hi=sstep(.78,1.02,t)*.5; r+=(1-r)*hi; gg+=(1-gg)*hi; b+=(1-b)*hi;
-        put(out,i*4,r*a,gg*a,b*a,a);
+        const l=ul[i]>0?ul[i]:0,I=4.5*l*l+.45*(uh[i]>0?uh[i]:0),a=1-Math.exp(-I*1.25);
+        const wh=sstep(.3,.8,l);
+        put(out,i*4,(base[0]+(1-base[0])*wh)*a,(base[1]+(1-base[1])*wh)*a,(base[2]+(1-base[2])*wh)*a,a);
       }
       frames.push(out); await tick((f+1)/n);
     }
-    return{frames,meta:{grid:g}};
+    return{frames,meta:{grid:g,drops:M}};
   }
 
-  /* ---------- カールノイズの粒子流 ---------- */
-  async function curl(o,tick){
-    const{w,h,n}=o,R=rng(o.seed),nz=mkNoise(R),g=256,P=2,hue=R();
-    /* 流れ関数 ψ。速度は (∂ψ/∂y, −∂ψ/∂x)。同じ差分で発散を取ると打ち消し合って0になる */
-    const psi=new Float32Array(g*g),zs=R()*8;
-    for(let y=0;y<g;y++)for(let x=0;x<g;x++)psi[y*g+x]=nz.fbm(x/g*P,y/g*P,zs,2,P,P,8);
-    const vx=new Float32Array(g*g),vy=new Float32Array(g*g);let ss=0;
-    for(let y=0;y<g;y++)for(let x=0;x<g;x++){
-      const i=y*g+x;
-      vx[i]=(psi[wrap(y+1,g)*g+x]-psi[wrap(y-1,g)*g+x])/2;
-      vy[i]=-(psi[y*g+wrap(x+1,g)]-psi[y*g+wrap(x-1,g)])/2;
-      ss+=vx[i]*vx[i]+vy[i]*vy[i];
-    }
-    let dmax=0;
-    for(let y=0;y<g;y++)for(let x=0;x<g;x++){
-      const d=(vx[y*g+wrap(x+1,g)]-vx[y*g+wrap(x-1,g)])/2+(vy[wrap(y+1,g)*g+x]-vy[wrap(y-1,g)*g+x])/2;
-      dmax=Math.max(dmax,Math.abs(d));
-    }
-    const rms=Math.sqrt(ss/(g*g));
-    /* 一様な流れを足す。足しても発散は0のまま。これが無いと流線がすべて閉じて、
-       粒がその場で小さく回るだけになる */
-    const da=R()*TAU,ux=Math.cos(da)*rms*.9,uy=Math.sin(da)*rms*.9;
-    for(let i=0;i<g*g;i++){vx[i]+=ux;vy[i]+=uy}
-    const samp=(F,x,y)=>{ // x,y は0〜1
-      const fx=x*g-.5,fy=y*g-.5,x0=Math.floor(fx),y0=Math.floor(fy),tx=fx-x0,ty=fy-y0;
-      const c0=wrap(x0,g),c1=wrap(x0+1,g),r0=wrap(y0,g)*g,r1=wrap(y0+1,g)*g;
-      const a=F[r0+c0],b=F[r0+c1],c=F[r1+c0],d=F[r1+c1];
-      return a+(b-a)*tx+((c+(d-c)*tx)-(a+(b-a)*tx))*ty};
-    /* 1コマで進む距離から細分数を決め、点の間隔が約1pxになるようにする */
-    const S=Math.max(2,Math.ceil(.85/n*Math.max(w,h)/.95)),step=.85/(n*S)/rms,J=n*S;
-    const np=Math.round(Math.sqrt(w*h)*3),K=Math.max(3,Math.round(n*.3))*S;
-    const path=new Float32Array(np*J*2),phase=new Uint16Array(np),col=new Float32Array(np*3);
-    const pal=[[0,...hsv(hue+.50,.9,1)],[.35,...hsv(hue+.62,.85,1)],[.7,...hsv(hue+.83,.8,1)],[1,...hsv(hue+.08,.85,1)]];
+  /* ---------- 光のボケ ---------- */
+  async function bokeh(o,tick){
+    const{w,h,n}=o,R=rng(o.seed),C=o.tint,s=Math.sqrt(w*h),np=24,P=[];
     for(let i=0;i<np;i++){
-      let x=R(),y=R();phase[i]=R()*n|0;
-      const c=ramp(pal,clamp01(.5+samp(psi,x,y)*1.6+(R()-.5)*.18)),br=.35+R()*R()*1.6;
-      col[i*3]=c[0]*br;col[i*3+1]=c[1]*br;col[i*3+2]=c[2]*br;
-      for(let j=0;j<J;j++){
-        path[(i*J+j)*2]=x;path[(i*J+j)*2+1]=y;
-        const hx=x+samp(vx,x,y)*step*.5,hy=y+samp(vy,x,y)*step*.5;   // 中点法
-        x+=samp(vx,hx,hy)*step;y+=samp(vy,hx,hy)*step;
-      }
-      if(i%400===0)await tick(.15*i/np);
+      const z=R();   // 大きい円ほど淡くする。手前でぼけた光は面積が広いぶん薄い
+      P.push({x:R()*w,y:R()*h,r:s*(.035+.10*z*z),col:C[R()*C.length|0],a:(.5-.28*z)*(.6+.4*R()),
+        ax:s*(.012+.03*R()),ay:s*(.012+.03*R()),p1:R()*TAU,p2:R()*TAU,p3:R()*TAU,m:1+(R()*2|0),dir:R()<.5?1:-1});
     }
-    const acc=new Float32Array(w*h*3),tmp=new Float32Array(w*h*3),tm2=new Float32Array(w*h*3),frames=[],
-      gain=1.05*(.85*Math.max(w,h)/(n*S));   // 点の間隔が広いぶんだけ1点を明るくする
+    const acc=new Float32Array(w*h*3),frames=[];
+    for(let f=0;f<n;f++){
+      const th=f/n*TAU;acc.fill(0);
+      for(const p of P)
+        splat(acc,w,h,p.x+p.ax*Math.sin(p.dir*th+p.p1),p.y+p.ay*Math.cos(p.dir*th+p.p2),p.r,p.col,
+          p.a*(.62+.38*Math.sin(p.m*th+p.p3)),DISC);
+      frames.push(develop(acc,w,h)); await tick((f+1)/n);
+    }
+    return{frames,meta:{discs:np}};
+  }
+
+  /* ---------- きらめき ---------- */
+  async function sparkle(o,tick){
+    const{w,h,n}=o,R=rng(o.seed),C=o.tint,s=Math.sqrt(w*h),stars=[],dust=[];
+    for(let i=0;i<30;i++){const z=R();
+      stars.push({x:R()*w,y:R()*h,sz:s*(.007+.013*z*z),col:C[R()*C.length|0],m:1+(R()*3|0),ph:R()*TAU})}
+    for(let i=0;i<70;i++)dust.push({x:R()*w,y:R()*h,r:s*(.004+.004*R()),a:.25+.5*R(),col:C[R()*C.length|0],m:1+(R()*2|0),ph:R()*TAU});
+    const white=[1,1,1],acc=new Float32Array(w*h*3),frames=[];
+    for(let f=0;f<n;f++){
+      const th=f/n*TAU;acc.fill(0);
+      for(const d of dust)splat(acc,w,h,d.x,d.y,Math.max(1.3,d.r),d.col,d.a*(.55+.45*Math.sin(d.m*th+d.ph)),GAUSS);
+      for(const p of stars){
+        const t=Math.sin(p.m*th+p.ph);if(t<=0)continue;
+        const e=t*t*t;if(e<.004)continue;
+        splat(acc,w,h,p.x,p.y,p.sz*(1.6+1.4*e),p.col,1.1*e,GAUSS);   // にじみ
+        splat(acc,w,h,p.x,p.y,Math.max(1.2,p.sz*.8),white,3*e,GAUSS); // 芯
+        /* 十字の光条。明るいほど長く伸びる */
+        const L=p.sz*8*e,rr=Math.max(1.1,p.sz*.38);
+        for(let d=1;d<L;d++){
+          const u=1-d/L,m=.9*e*u*u;
+          splat(acc,w,h,p.x+d,p.y,rr,p.col,m,GAUSS);splat(acc,w,h,p.x-d,p.y,rr,p.col,m,GAUSS);
+          splat(acc,w,h,p.x,p.y+d,rr,p.col,m,GAUSS);splat(acc,w,h,p.x,p.y-d,rr,p.col,m,GAUSS);
+        }
+      }
+      frames.push(develop(acc,w,h)); await tick((f+1)/n);
+    }
+    return{frames,meta:{stars:stars.length,dust:dust.length}};
+  }
+
+  /* ---------- 雪 ---------- */
+  async function snow(o,tick){
+    const{w,h,n}=o,R=rng(o.seed),C=o.tint,s=Math.sqrt(w*h),P=[];
+    for(let i=0;i<130;i++){
+      const z=Math.pow(R(),1.6);   // 0=奥、1=手前。奥の小さい粒を多くする
+      P.push({x:R()*w,y:R()*h,r:Math.max(1.4,s*(.008+.032*z)),a:1.1-.55*z,col:C[R()*C.length|0],
+        v:h*(.22+.6*z),vx:w*.07*(.4+z),sw:s*(.008+.03*z),m:1+(R()*2|0),p:R()*TAU,ph:R()*n|0});
+    }
+    const acc=new Float32Array(w*h*3),frames=[];
     for(let f=0;f<n;f++){
       acc.fill(0);
-      for(let i=0;i<np;i++){
-        const age=(f+phase[i])%n,head=age*S+S-1,env=Math.sin(Math.PI*(age+.5)/n)**2*gain;
-        const cr=col[i*3],cg=col[i*3+1],cb=col[i*3+2],kmax=Math.min(K,head+1);
-        for(let k=0;k<kmax;k++){
-          const j=(i*J+head-k)*2,fx=path[j]*w-.5,fy=path[j+1]*h-.5;
-          const x0=Math.floor(fx),y0=Math.floor(fy),tx=fx-x0,ty=fy-y0,u=1-k/K,wt=env*u*u*(k?1:2.2);
-          const c0=wrap(x0,w),c1=wrap(x0+1,w),r0=wrap(y0,h)*w,r1=wrap(y0+1,h)*w;
-          let q=(r0+c0)*3,m=wt*(1-tx)*(1-ty);acc[q]+=cr*m;acc[q+1]+=cg*m;acc[q+2]+=cb*m;
-          q=(r0+c1)*3;m=wt*tx*(1-ty);acc[q]+=cr*m;acc[q+1]+=cg*m;acc[q+2]+=cb*m;
-          q=(r1+c0)*3;m=wt*(1-tx)*ty;acc[q]+=cr*m;acc[q+1]+=cg*m;acc[q+2]+=cb*m;
-          q=(r1+c1)*3;m=wt*tx*ty;acc[q]+=cr*m;acc[q+1]+=cg*m;acc[q+2]+=cb*m;
-        }
+      for(const p of P){
+        /* 粒ごとに1周ぶんの寿命を持たせ、現れる時刻をずらす。速さを自由に選んでも必ずループする */
+        const u=((f+p.ph)%n)/n,env=sstep(0,.12,u)*sstep(1,.88,u);if(env<.004)continue;
+        splat(acc,w,h,p.x+p.vx*u+p.sw*Math.sin(p.m*TAU*u+p.p),p.y+p.v*u,p.r,p.col,p.a*env,GAUSS);
       }
-      /* にじみ。横・縦に1回ずつ均して、線のまわりに淡い光をまとわせる */
-      const br=Math.max(1,Math.round(Math.max(w,h)/128)),bn=2*br+1;
-      for(let y=0;y<h;y++)for(let x=0;x<w;x++){let a=0,b=0,c=0;
-        for(let d=-br;d<=br;d++){const q=(y*w+wrap(x+d,w))*3;a+=acc[q];b+=acc[q+1];c+=acc[q+2]}
-        const q=(y*w+x)*3;tmp[q]=a/bn;tmp[q+1]=b/bn;tmp[q+2]=c/bn}
-      for(let y=0;y<h;y++)for(let x=0;x<w;x++){let a=0,b=0,c=0;
-        for(let d=-br;d<=br;d++){const q=(wrap(y+d,h)*w+x)*3;a+=tmp[q];b+=tmp[q+1];c+=tmp[q+2]}
-        const q=(y*w+x)*3;tm2[q]=a/bn;tm2[q+1]=b/bn;tm2[q+2]=c/bn}
-      tmp.set(tm2);
-      const out=new Uint8ClampedArray(w*h*4);
-      for(let i=0;i<w*h;i++){
-        const q=i*3,r=1-Math.exp(-acc[q]-tmp[q]*.9),gg=1-Math.exp(-acc[q+1]-tmp[q+1]*.9),b=1-Math.exp(-acc[q+2]-tmp[q+2]*.9);
-        put(out,i*4,r,gg,b,Math.max(r,gg,b));
-      }
-      frames.push(out); await tick(.15+.85*(f+1)/n);
+      frames.push(develop(acc,w,h)); await tick((f+1)/n);
     }
-    return{frames,meta:{particles:np,substeps:S,divMax:dmax,speedRms:rms}};
-  }
-
-  /* ---------- 反応拡散（Gray–Scott） ---------- */
-  /* u は餌、v は増える側。 u' = Du∇²u − uv² + F(1−u),  v' = Dv∇²v + uv² − (F+k)v
-     F,k の組で模様の種類が決まる。迷路や縞は育ちきると止まってしまうので、
-     斑点と輪が生まれては消え続ける領域（F=0.018, k=0.051）を使う。 */
-  const RD={F:.018,k:.051,Du:.2097,Dv:.105};
-  async function react(o,tick){
-    const{w,h,n}=o,R=rng(o.seed),g=Math.max(w,h)>=384?192:128,N=g*g,P=o.rd||RD;
-    let u=new Float32Array(N).fill(1),v=new Float32Array(N),u2=new Float32Array(N),v2=new Float32Array(N);
-    for(let s=0,ns=Math.round(N/700);s<ns;s++){
-      const cx=R()*g|0,cy=R()*g|0,rad=2+R()*4|0;
-      for(let dy=-rad;dy<=rad;dy++)for(let dx=-rad;dx<=rad;dx++)if(dx*dx+dy*dy<=rad*rad){
-        const i=wrap(cy+dy,g)*g+wrap(cx+dx,g);u[i]=.5;v[i]=.25+R()*.1}
-    }
-    const xm=new Int32Array(g),xp=new Int32Array(g);
-    for(let i=0;i<g;i++){xm[i]=wrap(i-1,g);xp[i]=wrap(i+1,g)}
-    const{F,k,Du,Dv}=P;
-    function stepN(c){
-      for(;c>0;c--){
-        for(let y=0;y<g;y++){
-          const r=y*g,ru=xm[y]*g,rd=xp[y]*g;
-          for(let x=0;x<g;x++){
-            const i=r+x,l=r+xm[x],rr=r+xp[x],a=u[i],b=v[i],abb=a*b*b;
-            u2[i]=a+Du*(u[l]+u[rr]+u[ru+x]+u[rd+x]-4*a)-abb+F*(1-a);
-            v2[i]=b+Dv*(v[l]+v[rr]+v[ru+x]+v[rd+x]-4*b)+abb-(F+k)*b;
-          }
-        }
-        let t=u;u=u2;u2=t;t=v;v=v2;v2=t;
-      }
-    }
-    const warm=o.warm||5000,per=o.per||Math.max(4,Math.round(520/n)),m=Math.max(2,Math.round(n*.3));
-    for(let s=0;s<warm;s+=250){stepN(250);await tick(.5*(s+250)/warm)}
-    const rec=[];
-    for(let f=0;f<n+m;f++){rec.push(v.slice());stepN(per);if(f%4===0)await tick(.5+.3*(f+1)/(n+m))}
-    for(let i=0;i<m;i++){const a=xfadeWeight(i,m),A=rec[i],B=rec[n+i];for(let j=0;j<N;j++)A[j]=B[j]+(A[j]-B[j])*a}
-    const hue=R(),pal=[[0,...hsv(hue+.92,.9,.55)],[.4,...hsv(hue+.98,.85,.95)],[.75,...hsv(hue+.07,.75,1)],[1,...hsv(hue+.13,.35,1)]];
-    const up=new Float32Array(w*h),ul=new Float32Array(w*h),gl=new Float32Array(N),frames=[];let vmax=0,cover=0;
-    for(let f=0;f<n;f++){
-      /* 傾きは粗い格子の上で取ってから引き伸ばす。引き伸ばした後に取ると格子の目が浮く */
-      const s=rec[f];
-      for(let y=0;y<g;y++)for(let x=0;x<g;x++)
-        gl[y*g+x]=(s[y*g+xp[x]]-s[y*g+xm[x]])+(s[xp[y]*g+x]-s[xm[y]*g+x]);
-      upsample(s,g,w,h,up);upsample(gl,g,w,h,ul);
-      const out=new Uint8ClampedArray(w*h*4);
-      for(let y=0;y<h;y++)for(let x=0;x<w;x++){
-        const i=y*w+x,val=up[i];if(val>vmax)vmax=val;
-        const a=sstep(.10,.20,val);if(!a){continue}
-        /* 濃度を高さに見立てて左上から光を当てる。平らな色面より立体に見える */
-        const lit=clamp01(.5-ul[i]*9),c=ramp(pal,sstep(.12,.40,val)*.75+lit*.35);
-        const sh=.55+.6*lit,sp=Math.pow(lit,6)*.5;
-        put(out,i*4,clamp01(c[0]*sh+sp)*a,clamp01(c[1]*sh+sp)*a,clamp01(c[2]*sh+sp)*a,a);
-        if(f===0&&a>.5)cover++;
-      }
-      frames.push(out); await tick(.8+.2*(f+1)/n);
-    }
-    return{frames,meta:{grid:g,F,k,vmax,cover:cover/(w*h),fade:m}};
-  }
-
-  /* ---------- 流体（インクの煙） ---------- */
-  function fft1(re,im,n,inv){
-    for(let i=1,j=0;i<n;i++){let bit=n>>1;for(;j&bit;bit>>=1)j^=bit;j^=bit;
-      if(i<j){let t=re[i];re[i]=re[j];re[j]=t;t=im[i];im[i]=im[j];im[j]=t}}
-    for(let len=2;len<=n;len<<=1){
-      const ang=(inv?TAU:-TAU)/len,wr=Math.cos(ang),wi=Math.sin(ang),hf=len>>1;
-      for(let i=0;i<n;i+=len){let cr=1,ci=0;
-        for(let k=0;k<hf;k++){const a=i+k,b=a+hf,xr=re[b]*cr-im[b]*ci,xi=re[b]*ci+im[b]*cr;
-          re[b]=re[a]-xr;im[b]=im[a]-xi;re[a]+=xr;im[a]+=xi;const t=cr*wr-ci*wi;ci=cr*wi+ci*wr;cr=t}}
-    }
-    if(inv)for(let i=0;i<n;i++){re[i]/=n;im[i]/=n}
-  }
-  function fft2(re,im,N,inv){
-    for(let y=0;y<N;y++)fft1(re.subarray(y*N,y*N+N),im.subarray(y*N,y*N+N),N,inv);
-    const tr=new Float64Array(N),ti=new Float64Array(N);
-    for(let x=0;x<N;x++){
-      for(let y=0;y<N;y++){tr[y]=re[y*N+x];ti[y]=im[y*N+x]}
-      fft1(tr,ti,N,inv);
-      for(let y=0;y<N;y++){re[y*N+x]=tr[y];im[y*N+x]=ti[y]}
-    }
-  }
-  async function fluid(o,tick){
-    const{w,h,n}=o,R=rng(o.seed),N=128,NN=N*N;
-    /* 領域は一辺1の周期箱。1周の長さ T を固定し、コマ数が増えたら刻みを細かくする */
-    const T=2.4,SUB=2,dt=T/(n*SUB),visc=2e-5,conf=6,decay=1.25;
-    let u=new Float64Array(NN),v=new Float64Array(NN),u0=new Float64Array(NN),v0=new Float64Array(NN);
-    const ui=new Float64Array(NN),vi=new Float64Array(NN),cu=new Float32Array(NN),ab=new Float32Array(NN);
-    const kk=new Float64Array(N);for(let i=0;i<N;i++)kk[i]=i<=N/2?i:i-N;
-    const D=w*h;let dye=[0,1,2].map(()=>new Float32Array(D)),dye2=[0,1,2].map(()=>new Float32Array(D));
-    /* 染料の噴き出し口。位置も向きも強さも1周で元に戻るように、整数倍の周波数だけで動かす */
-    const hue=R(),ne=3,em=[];
-    for(let e=0;e<ne;e++)em.push({a:R()*TAU,rad:.2+R()*.12,turn:R()<.5?1:-1,ph:R()*TAU,sw:1+(R()*2|0),
-      col:hsv(hue+e*.17+(R()-.5)*.06,.82,1),bias:(R()-.5)*1.2});
-    const stats={divBefore:0,divAfter:0,speedMax:0};
-    function bil(F,x,y){ // x,y は格子単位
-      const x0=Math.floor(x),y0=Math.floor(y),tx=x-x0,ty=y-y0;
-      const c0=x0&(N-1),c1=(x0+1)&(N-1),r0=(y0&(N-1))*N,r1=((y0+1)&(N-1))*N;
-      const a=F[r0+c0],b=F[r0+c1],c=F[r1+c0],d=F[r1+c1];
-      return a+(b-a)*tx+((c+(d-c)*tx)-(a+(b-a)*tx))*ty}
-    function simStep(time,measure){
-      const ph=time/T*TAU;
-      /* 1. 外力：噴き出し口のジェットと、渦を痩せさせないための渦度の閉じ込め */
-      for(let y=0;y<N;y++)for(let x=0;x<N;x++){
-        const i=y*N+x,xl=(x-1)&(N-1),xr=(x+1)&(N-1),yu=((y-1)&(N-1))*N,yd=((y+1)&(N-1))*N;
-        cu[i]=((v[y*N+xr]-v[y*N+xl])-(u[yd+x]-u[yu+x]))*.5*N;ab[i]=Math.abs(cu[i]);
-      }
-      for(let y=0;y<N;y++)for(let x=0;x<N;x++){
-        const i=y*N+x,xl=(x-1)&(N-1),xr=(x+1)&(N-1),yu=((y-1)&(N-1))*N,yd=((y+1)&(N-1))*N;
-        let gx=ab[y*N+xr]-ab[y*N+xl],gy=ab[yd+x]-ab[yu+x];const l=Math.hypot(gx,gy)+1e-9;gx/=l;gy/=l;
-        u[i]+=dt*conf/N*gy*cu[i];v[i]-=dt*conf/N*gx*cu[i];
-      }
-      const src=[];
-      for(const e of em){
-        const ang=e.a+e.turn*ph,cx=.5+e.rad*Math.cos(ang),cy=.5+e.rad*Math.sin(ang);
-        const dir=ang+Math.PI*.5*e.turn+Math.PI*.28+e.bias*Math.sin(ph*e.sw+e.ph);
-        const pw=.55+.45*Math.sin(ph*2+e.ph);
-        src.push({cx,cy,dx:Math.cos(dir),dy:Math.sin(dir),pw,col:e.col});
-      }
-      const sg=.035,r2=2*sg*sg;
-      for(const s of src){
-        const x0=Math.floor((s.cx-3*sg)*N),x1=Math.ceil((s.cx+3*sg)*N),y0=Math.floor((s.cy-3*sg)*N),y1=Math.ceil((s.cy+3*sg)*N);
-        for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){
-          const ddx=(x+.5)/N-s.cx,ddy=(y+.5)/N-s.cy,gw=Math.exp(-(ddx*ddx+ddy*ddy)/r2),i=(y&(N-1))*N+(x&(N-1));
-          u[i]+=dt*9*s.pw*gw*s.dx;v[i]+=dt*9*s.pw*gw*s.dy;
-        }
-      }
-      /* 2. 移流：流れを遡った先の値を取ってくる（無条件に安定） */
-      let t=u;u=u0;u0=t;t=v;v=v0;v0=t;
-      for(let y=0;y<N;y++)for(let x=0;x<N;x++){
-        const i=y*N+x,bx=x-dt*N*u0[i],by=y-dt*N*v0[i];
-        u[i]=bil(u0,bx,by);v[i]=bil(v0,bx,by);
-      }
-      /* 3. フーリエ空間で粘性を掛け、波数ベクトルに平行な成分を捨てる（＝発散を0にする） */
-      ui.fill(0);vi.fill(0);fft2(u,ui,N,false);fft2(v,vi,N,false);
-      let db=0,da=0;
-      for(let y=0;y<N;y++)for(let x=0;x<N;x++){
-        const i=y*N+x,kx=kk[x],ky=kk[y],k2=kx*kx+ky*ky;if(!k2){u[i]=ui[i]=v[i]=vi[i]=0;continue}
-        const f=Math.exp(-visc*k2*TAU*TAU*dt);
-        let ar=u[i]*f,ai=ui[i]*f,br=v[i]*f,bi=vi[i]*f;
-        const dr=kx*ar+ky*br,di=kx*ai+ky*bi;
-        if(measure)db+=dr*dr+di*di;
-        ar-=kx*dr/k2;ai-=kx*di/k2;br-=ky*dr/k2;bi-=ky*di/k2;
-        if(measure){const er=kx*ar+ky*br,ei=kx*ai+ky*bi;da+=er*er+ei*ei}
-        u[i]=ar;ui[i]=ai;v[i]=br;vi[i]=bi;
-      }
-      if(measure){stats.divBefore=TAU*Math.sqrt(db)/NN;stats.divAfter=TAU*Math.sqrt(da)/NN}
-      fft2(u,ui,N,true);fft2(v,vi,N,true);
-      /* 4. 染料も同じ流れで運ぶ。少しずつ薄れるので、噴き出しと釣り合って落ち着く */
-      const kd=Math.exp(-decay*dt),sx=N/w,sy=N/h;
-      for(let y=0;y<h;y++)for(let x=0;x<w;x++){
-        const gx=(x+.5)*sx-.5,gy=(y+.5)*sy-.5;
-        const fx=x-dt*w*bil(u,gx,gy),fy=y-dt*h*bil(v,gx,gy);
-        const x0=Math.floor(fx),y0=Math.floor(fy),tx=fx-x0,ty=fy-y0;
-        const c0=wrap(x0,w),c1=wrap(x0+1,w),r0=wrap(y0,h)*w,r1=wrap(y0+1,h)*w,i=y*w+x;
-        const w00=(1-tx)*(1-ty)*kd,w10=tx*(1-ty)*kd,w01=(1-tx)*ty*kd,w11=tx*ty*kd;
-        for(let c=0;c<3;c++){const s=dye[c];dye2[c][i]=s[r0+c0]*w00+s[r0+c1]*w10+s[r1+c0]*w01+s[r1+c1]*w11}
-      }
-      t=dye;dye=dye2;dye2=t;
-      for(const s of src){
-        const rs=sg*.8,q=2*rs*rs,x0=Math.floor((s.cx-3*rs)*w),x1=Math.ceil((s.cx+3*rs)*w),y0=Math.floor((s.cy-3*rs)*h),y1=Math.ceil((s.cy+3*rs)*h);
-        for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){
-          const ddx=(x+.5)/w-s.cx,ddy=(y+.5)/h-s.cy,gw=Math.exp(-(ddx*ddx+ddy*ddy)/q)*dt*14*(.35+.65*s.pw),i=wrap(y,h)*w+wrap(x,w);
-          dye[0][i]+=gw*s.col[0];dye[1][i]+=gw*s.col[1];dye[2][i]+=gw*s.col[2];
-        }
-      }
-    }
-    /* 乗算済み8bitで持つ。浮動小数のまま全コマ抱えると大きいサイズでメモリを食う */
-    function shot(){
-      const out=new Uint8ClampedArray(D*4);
-      for(let i=0;i<D;i++){
-        const r=1-Math.exp(-dye[0][i]*1.6),g=1-Math.exp(-dye[1][i]*1.6),b=1-Math.exp(-dye[2][i]*1.6);
-        out[i*4]=r*255+.5;out[i*4+1]=g*255+.5;out[i*4+2]=b*255+.5;out[i*4+3]=Math.max(r,g,b)*255+.5;
-      }
-      return out;
-    }
-    const m=Math.max(2,Math.round(n*.3)),total=2*n+m;let time=0,done=0;
-    const frame=async(measure)=>{for(let s=0;s<SUB;s++){simStep(time,measure&&s===SUB-1);time+=dt}
-      await tick(++done/total)};
-    for(let f=0;f<n;f++)await frame(false);         // 1周ぶん空回しして落ち着かせる
-    const frames=[];
-    for(let f=0;f<n;f++){frames.push(shot());await frame(f===n-1)}
-    for(let i=0;i<m;i++){
-      const B=shot(),A=frames[i],a=xfadeWeight(i,m);
-      for(let j=0;j<D*4;j++)A[j]=B[j]+(A[j]-B[j])*a+.5;
-      await frame(false);
-    }
-    for(let i=0;i<NN;i++)stats.speedMax=Math.max(stats.speedMax,Math.hypot(u[i],v[i]));
-    for(const A of frames)for(let j=0;j<D*4;j+=4){
-      const a=A[j+3];if(!a){A[j]=A[j+1]=A[j+2]=0;continue}
-      A[j]=A[j]*255/a+.5;A[j+1]=A[j+1]*255/a+.5;A[j+2]=A[j+2]*255/a+.5;
-    }
-    return{frames,meta:{grid:N,fade:m,cfl:stats.speedMax*dt*N,...stats}};
+    return{frames,meta:{flakes:P.length}};
   }
 
   const KINDS={
-    fluid:{label:'流体',name:'流体・インクの煙',run:fluid,
-      note:'格子の上で非圧縮の流れを解き、染料を運ばせます（Stam, Stable Fluids 1999）。色の違う噴き出し口が回りながら渦を巻きます。'},
-    react:{label:'反応拡散',name:'反応拡散',run:react,
-      note:'2種類の物質が食い合いながら広がる Gray–Scott モデルです（Pearson 1993）。斑点が分裂し、つながり、消えていきます。'},
-    curl:{label:'粒子流',name:'カールノイズの粒子流',run:curl,
-      note:'湧き出しも吸い込みも無い流れ（カールノイズ, Bridson 2007）に光の粒を流します。スクリーン合成で重ねると映えます。'},
-    warp:{label:'オーロラ',name:'ドメインワープ・オーロラ',run:warp,
-      note:'ノイズの入力をノイズで歪ませるドメインワープです。液体のような色面がゆっくり流れます。'}
+    ripple:{label:'波紋',name:'水面の波紋',run:ripple,
+      note:'水面に落ちた点から波の輪が広がり、左上からの光を照り返します。'},
+    bokeh:{label:'光のボケ',name:'光のボケ',run:bokeh,
+      note:'ピントの外れた光の円が、ゆっくり揺れながら明滅します。スクリーン合成で重ねると馴染みます。'},
+    sparkle:{label:'きらめき',name:'きらめき',run:sparkle,
+      note:'十字の光条を持つ星がまたたきます。'},
+    snow:{label:'雪',name:'雪',run:snow,
+      note:'奥行きごとに大きさと速さの違う雪が、揺れながら降ります。'}
   };
   async function run(kind,o,tick){
     const K=KINDS[kind];if(!K)throw new Error('未知の生成種別: '+kind);
-    const r=await K.run({w:o.w,h:o.h,n:o.n,seed:o.seed>>>0,rd:o.rd,warm:o.warm,per:o.per},tick||(async()=>{}));
+    const T=TINTS[o.tint||'white'];if(!T)throw new Error('未知の配色: '+o.tint);
+    const r=await K.run({w:o.w,h:o.h,n:o.n,seed:o.seed>>>0,tint:T.c},tick||(async()=>{}));
     r.w=o.w;r.h=o.h;r.name=K.name;return r;
   }
-  return{KINDS,run};
+  return{KINDS,TINTS,run};
 })();
 
 /* ============ コマ個別の上書き ============ */
@@ -3101,13 +2897,17 @@ el('ov').addEventListener('click',e=>{ if(e.target===el('ov')) el('ov').classLis
 
 /* ============ 生成ダイアログ ============ */
 const GEN_DELAY=50;
-let genKind='fluid', genBusy=false, genAbort=false, genFrom=null, genLast=null;
+let genKind='ripple', genBusy=false, genAbort=false, genFrom=null, genLast=null;
 const genDice=()=>{ el('genSeed').value=Math.floor(Math.random()*1e6); };
 Object.keys(GEN.KINDS).forEach(k=>{
   const b=document.createElement('button');
   b.type='button'; b.className='chip'; b.dataset.k=k; b.textContent=GEN.KINDS[k].label;
   b.addEventListener('click',()=>{ genKind=k; genSync(); });
   el('genKinds').appendChild(b);
+});
+Object.keys(GEN.TINTS).forEach(k=>{
+  const op=document.createElement('option'); op.value=k; op.textContent=GEN.TINTS[k].label;
+  el('genTint').appendChild(op);
 });
 function genSync(){
   [...el('genKinds').children].forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.k===genKind)));
@@ -3116,7 +2916,7 @@ function genSync(){
 function genLock(on){
   genBusy=on;
   /* 計算中は disabled を立てる。見た目だけ切るとキーボードで押せてしまう */
-  ['genSize','genN','genSeed','genDice','genRun'].forEach(id=>{ el(id).disabled=on; });
+  ['genSize','genN','genTint','genSeed','genDice','genRun'].forEach(id=>{ el(id).disabled=on; });
   [...el('genKinds').children].forEach(b=>{ b.disabled=on; });
   el('genClose').textContent=on?'中止':'閉じる';
   el('genProg').style.visibility=on?'visible':'hidden';
@@ -3130,13 +2930,13 @@ function genHide(){ el('gen').classList.remove('on'); if(genFrom&&genFrom.offset
 function genClose(){ if(genBusy) genAbort=true; else genHide(); }
 async function genRun(){
   if(genBusy) return;
-  const w=+el('genSize').value, n=+el('genN').value;
+  const w=+el('genSize').value, n=+el('genN').value, tint=el('genTint').value;
   const seed=Math.max(0,Math.min(999999,Math.round(+el('genSeed').value||0)));
   el('genSeed').value=seed;
   genAbort=false; genLock(true); clearError(); el('genClose').focus();
   const prog=el('genProg'); prog.value=0; let last=performance.now();
   try{
-    const r=await GEN.run(genKind,{w,h:w,n,seed},async p=>{
+    const r=await GEN.run(genKind,{w,h:w,n,seed,tint},async p=>{
       if(genAbort) throw new Error('GEN_ABORT');
       const now=performance.now(); if(now-last<40) return;
       /* 進み具合を描かせ、「中止」を受け取れるよう、ときどき制御を返す */
@@ -3146,7 +2946,7 @@ async function genRun(){
       const c=document.createElement('canvas'); c.width=r.w; c.height=r.h;
       c.getContext('2d').putImageData(new ImageData(px,r.w,r.h),0,0); return c;
     });
-    genLast={kind:genKind,seed,meta:r.meta};
+    genLast={kind:genKind,seed,tint,meta:r.meta};
     adoptLayer(mkLayer(`${r.name} #${seed}`,r.w,r.h,canvases,canvases.map(()=>GEN_DELAY),true));
     genLock(false); genHide(); afterAdd();
     toast(`${r.name} を追加しました（${n}コマ）`);
